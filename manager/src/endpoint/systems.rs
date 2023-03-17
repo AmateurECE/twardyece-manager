@@ -14,13 +14,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use seuss::redfish_error;
 use redfish_codegen::api::v1::systems;
 use redfish_codegen::models::{
     computer_system::v1_20_0::ComputerSystem, computer_system_collection::ComputerSystemCollection,
     odata_v4,
 };
 use redfish_codegen::registries::base::v1_15_0::Base;
+use seuss::redfish_error;
 
 #[derive(Clone, Default)]
 pub struct Systems {

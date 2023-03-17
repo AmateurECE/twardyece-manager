@@ -27,11 +27,15 @@ async fn main() {
         resource::Id("example-basic".to_string()),
     );
 
-    let app: Router = service::RedfishService::new(service_root).into();
-    let app = app.nest(
-        "/Systems",
-        service::Systems::new(endpoint::Systems::new()).into(),
-    );
+    let app: Router = Router::new()
+        .route(
+            "/redfish/v1",
+            service::RedfishService::new(service_root).into(),
+        )
+        .route(
+            "/redfish/v1/Systems",
+            service::Systems::new(endpoint::Systems::new()).into(),
+        );
     axum::Server::bind(&"127.0.0.1:3000".parse().unwrap())
         .serve(app.into_make_service())
         .await
