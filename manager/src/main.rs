@@ -15,7 +15,7 @@
 // limitations under the License.
 
 use axum::Router;
-use redfish_codegen::models::resource;
+use redfish_codegen::models::{odata_v4, resource};
 use seuss::service;
 
 mod endpoint;
@@ -27,14 +27,26 @@ async fn main() {
         resource::Id("example-basic".to_string()),
     );
 
+    let systems = endpoint::Systems::new(
+        odata_v4::Id("/redfish/v1/Systems".to_string()),
+        vec![endpoint::DummySystem {
+            odata_id: odata_v4::Id("/redfish/v1/Systems/1".to_string()),
+            name: resource::Name("1".to_string()),
+        }],
+    );
+
     let app: Router = Router::new()
         .route(
             "/redfish/v1",
-            service::RedfishService::new(service_root).into(),
+            service::ServiceRoot::new(service_root).into(),
         )
         .route(
             "/redfish/v1/Systems",
-            service::Systems::new(endpoint::Systems::new()).into(),
+            service::Systems::new(systems.clone()).into(),
+        )
+        .route(
+            "/redfish/v1/Systems/:name",
+            service::ComputerSystemDetail::new(systems).into(),
         );
     axum::Server::bind(&"127.0.0.1:3000".parse().unwrap())
         .serve(app.into_make_service())
