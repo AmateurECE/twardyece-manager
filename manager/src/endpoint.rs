@@ -14,26 +14,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use axum::Router;
-use redfish_codegen::models::resource;
-use seuss::service;
+mod service_root;
+pub use service_root::*;
 
-mod endpoint;
-
-#[tokio::main]
-async fn main() {
-    let service_root = endpoint::ServiceRoot::new(
-        resource::Name("Basic Redfish Service".to_string()),
-        resource::Id("example-basic".to_string()),
-    );
-
-    let app: Router = service::RedfishService::new(service_root).into();
-    let app = app.nest(
-        "/Systems",
-        service::Systems::new(endpoint::Systems::new()).into(),
-    );
-    axum::Server::bind(&"127.0.0.1:3000".parse().unwrap())
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
-}
+mod systems;
+pub use systems::*;
