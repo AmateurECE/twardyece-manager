@@ -64,6 +64,14 @@ impl systems::Systems for Systems {
     fn get(&self) -> systems::SystemsGetResponse {
         systems::SystemsGetResponse::Ok(ComputerSystemCollection {
             odata_id: self.odata_id.clone(),
+            members: self
+                .systems
+                .iter()
+                .map(|system| odata_v4::IdRef {
+                    odata_id: Some(odata_v4::Id(system.odata_id.0.clone())),
+                })
+                .collect(),
+            members_odata_count: odata_v4::Count(self.systems.len().try_into().unwrap()),
             ..Default::default()
         })
     }
