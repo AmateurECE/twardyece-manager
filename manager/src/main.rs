@@ -49,7 +49,11 @@ async fn main() {
         )
         .route(
             "/redfish/v1/Systems/:name",
-            service::ComputerSystemDetail::new(systems).into(),
+            service::computer_system_detail::ComputerSystemDetail::new(systems.clone()).into(),
+        )
+        .route(
+            "/redfish/v1/Systems/:name/Actions/ComputerSystem.Reset",
+            service::computer_system_detail::reset::ResetRouter::new(systems).into(),
         )
         .layer(TraceLayer::new_for_http());
     axum::Server::bind(&"127.0.0.1:3000".parse().unwrap())

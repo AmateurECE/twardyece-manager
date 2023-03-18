@@ -16,7 +16,8 @@
 
 use redfish_codegen::api::v1::{computer_system_detail, systems};
 use redfish_codegen::models::{
-    computer_system::v1_20_0::ComputerSystem, computer_system_collection::ComputerSystemCollection,
+    computer_system::v1_20_0::{ComputerSystem, ResetRequestBody},
+    computer_system_collection::ComputerSystemCollection,
     odata_v4, resource,
 };
 use redfish_codegen::registries::base::v1_15_0::Base;
@@ -31,7 +32,11 @@ pub struct DummySystem {
 
 impl Into<ComputerSystem> for DummySystem {
     fn into(self) -> ComputerSystem {
-        let DummySystem { name, odata_id, power_state } = self;
+        let DummySystem {
+            name,
+            odata_id,
+            power_state,
+        } = self;
         let id = resource::Id(name.0.clone());
         ComputerSystem {
             odata_id,
@@ -103,5 +108,66 @@ impl computer_system_detail::ComputerSystemDetail for Systems {
         _body: serde_json::Value,
     ) -> computer_system_detail::ComputerSystemDetailPatchResponse {
         todo!()
+    }
+}
+
+impl seuss::ResourceCollection for Systems {
+    type Resource = DummySystem;
+    fn access(&self, id: String) -> Option<&Self::Resource> {
+        self.systems.iter().find(|system| id == system.name.0)
+    }
+
+    fn access_mut(&mut self, id: String) -> Option<&mut Self::Resource> {
+        self.systems.iter_mut().find(|system| id == system.name.0)
+    }
+}
+
+impl computer_system_detail::reset::Reset for DummySystem {
+    fn post(
+        &mut self,
+        _id1: String,
+        _id2: String,
+        body: ResetRequestBody,
+    ) -> computer_system_detail::reset::ResetPostResponse {
+        if body.reset_type.is_none() {
+            let message =
+                Base::ActionParameterMissing("Reset".to_string(), "ResetType".to_string());
+            return ResetPostResponse::Default(redfish_error::one_message(message.into()));
+        }
+        let reset_type = body.reset_type.unwrap();
+
+        use computer_system_detail::reset::ResetPostResponse;
+        use resource::ResetType::*;
+        match reset_type {
+            GracefulRestart | ForceRestart | On | ForceOn | PowerCycle => {
+                self.power_state = resource::PowerState::On;
+                ResetPostResponse::Ok(redfish_error::one_message(Base::Success.into()))
+            }
+            ForceOff | GracefulShutdown => {
+                self.power_state = resource::PowerState::Off;
+                ResetPostResponse::Ok(redfish_error::one_message(Base::Success.into()))
+            }
+            Nmi | Suspend | Pause | Resume => {
+                ResetPostResponse::Default(redfish_error::one_message(
+                    Base::PropertyNotUpdated("PowerState".to_string()).into(),
+                ))
+            }
+            PushPowerButton => {
+                match self.power_state {
+                    resource::PowerState::On | resource::PowerState::PoweringOn => {
+                        self.power_state = resource::PowerState::Off
+                    }
+                    resource::PowerState::Off | resource::PowerState::PoweringOff => {
+                        self.power_state = resource::PowerState::On
+                    }
+                    resource::PowerState::Paused => {
+                        return ResetPostResponse::Default(redfish_error::one_message(
+                            Base::PropertyValueError("PowerState".to_string()).into(),
+                        ))
+                    }
+                }
+                ResetPostResponse::Ok(redfish_error::one_message(Base::Success.into()))
+            }
+        }
     }
 }
