@@ -17,7 +17,6 @@
 use axum::Router;
 use redfish_codegen::models::{odata_v4, resource};
 use seuss::service;
-use std::sync::{Arc, Mutex};
 use tower_http::trace::TraceLayer;
 
 mod endpoint;
@@ -30,14 +29,14 @@ async fn main() {
         resource::Id("example-basic".to_string()),
     );
 
-    let systems = Arc::new(Mutex::new(endpoint::Systems::new(
+    let systems = endpoint::Systems::new(
         odata_v4::Id("/redfish/v1/Systems".to_string()),
         vec![endpoint::DummySystem {
             odata_id: odata_v4::Id("/redfish/v1/Systems/1".to_string()),
             name: resource::Name("1".to_string()),
             ..Default::default()
         }],
-    )));
+    );
 
     let app: Router = Router::new()
         .route(
@@ -46,11 +45,11 @@ async fn main() {
         )
         .route(
             "/redfish/v1/Systems",
-            service::Systems::new(Arc::clone(&systems)).into(),
+            service::Systems::new(systems.clone()).into(),
         )
         .route(
             "/redfish/v1/Systems/:name",
-            service::computer_system_detail::ComputerSystemDetail::new(Arc::clone(&systems)).into(),
+            service::computer_system_detail::ComputerSystemDetail::new(systems.clone()).into(),
         )
         .route(
             "/redfish/v1/Systems/:name/Actions/ComputerSystem.Reset",

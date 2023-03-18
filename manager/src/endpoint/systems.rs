@@ -22,6 +22,7 @@ use redfish_codegen::models::{
 };
 use redfish_codegen::registries::base::v1_15_0::Base;
 use seuss::redfish_error;
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Default)]
 pub struct DummySystem {
@@ -51,27 +52,35 @@ impl Into<ComputerSystem> for DummySystem {
 #[derive(Clone, Default)]
 pub struct Systems {
     odata_id: odata_v4::Id,
-    systems: Vec<DummySystem>,
+    systems: Arc<Mutex<Vec<DummySystem>>>,
 }
 
 impl Systems {
     pub fn new(odata_id: odata_v4::Id, systems: Vec<DummySystem>) -> Self {
-        Systems { systems, odata_id }
+        Systems {
+            odata_id,
+            systems: Arc::new(Mutex::new(systems)),
+        }
     }
 }
 
 impl systems::Systems for Systems {
     fn get(&self) -> systems::SystemsGetResponse {
+        // TODO: Could probably optimize this down to one lock operation
         systems::SystemsGetResponse::Ok(ComputerSystemCollection {
             odata_id: self.odata_id.clone(),
             members: self
                 .systems
+                .lock()
+                .unwrap()
                 .iter()
                 .map(|system| odata_v4::IdRef {
                     odata_id: Some(odata_v4::Id(system.odata_id.0.clone())),
                 })
                 .collect(),
-            members_odata_count: odata_v4::Count(self.systems.len().try_into().unwrap()),
+            members_odata_count: odata_v4::Count(
+                self.systems.lock().unwrap().len().try_into().unwrap(),
+            ),
             ..Default::default()
         })
     }
@@ -85,7 +94,13 @@ impl systems::Systems for Systems {
 
 impl computer_system_detail::ComputerSystemDetail for Systems {
     fn get(&self, id: String) -> computer_system_detail::ComputerSystemDetailGetResponse {
-        match self.systems.iter().find(|system| id == system.name.0) {
+        match self
+            .systems
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|system| id == system.name.0)
+        {
             Some(system) => {
                 computer_system_detail::ComputerSystemDetailGetResponse::Ok(system.clone().into())
             }
@@ -119,62 +134,68 @@ impl computer_system_detail::ComputerSystemDetail for Systems {
     }
 }
 
-impl seuss::ResourceCollection for Systems {
-    type Resource = DummySystem;
-    fn access(&self, id: String) -> Option<&Self::Resource> {
-        self.systems.iter().find(|system| id == system.name.0)
-    }
-
-    fn access_mut(&mut self, id: String) -> Option<&mut Self::Resource> {
-        self.systems.iter_mut().find(|system| id == system.name.0)
-    }
-}
-
-impl computer_system_detail::reset::Reset for DummySystem {
+impl computer_system_detail::reset::Reset for Systems {
     fn post(
         &mut self,
-        _id1: String,
-        _id2: String,
+        _id: String,
+        id: String,
         body: ResetRequestBody,
     ) -> computer_system_detail::reset::ResetPostResponse {
-        if body.reset_type.is_none() {
-            let message =
-                Base::ActionParameterMissing("Reset".to_string(), "ResetType".to_string());
-            return ResetPostResponse::Default(redfish_error::one_message(message.into()));
-        }
-        let reset_type = body.reset_type.unwrap();
-
         use computer_system_detail::reset::ResetPostResponse;
         use resource::ResetType::*;
-        match reset_type {
-            GracefulRestart | ForceRestart | On | ForceOn | PowerCycle => {
-                self.power_state = resource::PowerState::On;
-                ResetPostResponse::Ok(redfish_error::one_message(Base::Success.into()))
-            }
-            ForceOff | GracefulShutdown => {
-                self.power_state = resource::PowerState::Off;
-                ResetPostResponse::Ok(redfish_error::one_message(Base::Success.into()))
-            }
-            Nmi | Suspend | Pause | Resume => {
-                ResetPostResponse::Default(redfish_error::one_message(
-                    Base::PropertyNotUpdated("PowerState".to_string()).into(),
-                ))
-            }
-            PushPowerButton => {
-                match self.power_state {
-                    resource::PowerState::On | resource::PowerState::PoweringOn => {
-                        self.power_state = resource::PowerState::Off
+        match self
+            .systems
+            .lock()
+            .unwrap()
+            .iter_mut()
+            .find(|system| id == system.name.0)
+        {
+            Some(system) => {
+                if body.reset_type.is_none() {
+                    let message =
+                        Base::ActionParameterMissing("Reset".to_string(), "ResetType".to_string());
+                    return ResetPostResponse::Default(redfish_error::one_message(message.into()));
+                }
+                let reset_type = body.reset_type.unwrap();
+
+                match reset_type {
+                    GracefulRestart | ForceRestart | On | ForceOn | PowerCycle => {
+                        system.power_state = resource::PowerState::On;
+                        ResetPostResponse::Ok(redfish_error::one_message(Base::Success.into()))
                     }
-                    resource::PowerState::Off | resource::PowerState::PoweringOff => {
-                        self.power_state = resource::PowerState::On
+                    ForceOff | GracefulShutdown => {
+                        system.power_state = resource::PowerState::Off;
+                        ResetPostResponse::Ok(redfish_error::one_message(Base::Success.into()))
                     }
-                    resource::PowerState::Paused => {
-                        return ResetPostResponse::Default(redfish_error::one_message(
-                            Base::PropertyValueError("PowerState".to_string()).into(),
+                    Nmi | Suspend | Pause | Resume => {
+                        ResetPostResponse::Default(redfish_error::one_message(
+                            Base::PropertyNotUpdated("PowerState".to_string()).into(),
                         ))
                     }
+                    PushPowerButton => {
+                        match system.power_state {
+                            resource::PowerState::On | resource::PowerState::PoweringOn => {
+                                system.power_state = resource::PowerState::Off
+                            }
+                            resource::PowerState::Off | resource::PowerState::PoweringOff => {
+                                system.power_state = resource::PowerState::On
+                            }
+                            resource::PowerState::Paused => {
+                                return ResetPostResponse::Default(redfish_error::one_message(
+                                    Base::PropertyValueError("PowerState".to_string()).into(),
+                                ))
+                            }
+                        };
+                        ResetPostResponse::Ok(redfish_error::one_message(Base::Success.into()))
+                    }
                 }
-                ResetPostResponse::Ok(redfish_error::one_message(Base::Success.into()))
+            }
+            None => {
+                let message = Base::ActionParameterMissing(
+                    "ComputerSystem.Reset".to_string(),
+                    "ResetType".to_string(),
+                );
+                ResetPostResponse::Default(redfish_error::one_message(message.into()))
             }
         }
     }
