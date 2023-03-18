@@ -26,14 +26,18 @@ use seuss::redfish_error;
 pub struct DummySystem {
     pub odata_id: odata_v4::Id,
     pub name: resource::Name,
+    pub power_state: resource::PowerState,
 }
 
 impl Into<ComputerSystem> for DummySystem {
     fn into(self) -> ComputerSystem {
-        let DummySystem { name, odata_id } = self;
+        let DummySystem { name, odata_id, power_state } = self;
+        let id = resource::Id(name.0.clone());
         ComputerSystem {
             odata_id,
             name,
+            id,
+            power_state: Some(power_state),
             ..Default::default()
         }
     }

@@ -34,6 +34,7 @@ async fn main() {
         vec![endpoint::DummySystem {
             odata_id: odata_v4::Id("/redfish/v1/Systems/1".to_string()),
             name: resource::Name("1".to_string()),
+            ..Default::default()
         }],
     );
 
