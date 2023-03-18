@@ -17,11 +17,13 @@
 use axum::Router;
 use redfish_codegen::models::{odata_v4, resource};
 use seuss::service;
+use tower_http::trace::TraceLayer;
 
 mod endpoint;
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt::init();
     let service_root = endpoint::ServiceRoot::new(
         resource::Name("Basic Redfish Service".to_string()),
         resource::Id("example-basic".to_string()),
@@ -47,7 +49,8 @@ async fn main() {
         .route(
             "/redfish/v1/Systems/:name",
             service::ComputerSystemDetail::new(systems).into(),
-        );
+        )
+        .layer(TraceLayer::new_for_http());
     axum::Server::bind(&"127.0.0.1:3000".parse().unwrap())
         .serve(app.into_make_service())
         .await
