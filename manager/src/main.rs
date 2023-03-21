@@ -16,7 +16,7 @@
 
 use axum::Router;
 use redfish_codegen::models::{odata_v4, resource};
-use seuss::service;
+use seuss::{extract::AuthHandler, service};
 use tower_http::trace::TraceLayer;
 
 mod endpoint;
@@ -29,6 +29,7 @@ async fn main() {
         resource::Id("example-basic".to_string()),
     );
 
+    let auth_handler = AuthHandler {};
     let systems = endpoint::Systems::new(
         odata_v4::Id("/redfish/v1/Systems".to_string()),
         vec![endpoint::DummySystem {
@@ -36,6 +37,7 @@ async fn main() {
             name: resource::Name("1".to_string()),
             ..Default::default()
         }],
+        auth_handler,
     );
 
     let app: Router = Router::new()

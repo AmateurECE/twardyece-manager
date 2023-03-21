@@ -21,7 +21,7 @@ use redfish_codegen::models::{
     odata_v4, resource,
 };
 use redfish_codegen::registries::base::v1_15_0::Base;
-use seuss::redfish_error;
+use seuss::{extract::AuthHandler, redfish_error};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Default)]
@@ -49,18 +49,30 @@ impl Into<ComputerSystem> for DummySystem {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Systems {
     odata_id: odata_v4::Id,
     systems: Arc<Mutex<Vec<DummySystem>>>,
+    auth_handler: AuthHandler,
 }
 
 impl Systems {
-    pub fn new(odata_id: odata_v4::Id, systems: Vec<DummySystem>) -> Self {
+    pub fn new(
+        odata_id: odata_v4::Id,
+        systems: Vec<DummySystem>,
+        auth_handler: AuthHandler,
+    ) -> Self {
         Systems {
             odata_id,
             systems: Arc::new(Mutex::new(systems)),
+            auth_handler,
         }
+    }
+}
+
+impl AsRef<AuthHandler> for Systems {
+    fn as_ref(&self) -> &AuthHandler {
+        &self.auth_handler
     }
 }
 
