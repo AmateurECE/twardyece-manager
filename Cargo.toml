@@ -1,4 +1,4 @@
 [workspace]
 members = [
-    "manager",
+    "twardyece-manager",
 ]
