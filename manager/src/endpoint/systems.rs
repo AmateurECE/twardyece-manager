@@ -21,7 +21,7 @@ use redfish_codegen::models::{
     odata_v4, resource,
 };
 use redfish_codegen::registries::base::v1_15_0::Base;
-use seuss::{extract::AuthHandler, redfish_error};
+use seuss::{auth::AuthenticateRequest, redfish_error};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Default)]
@@ -50,18 +50,20 @@ impl Into<ComputerSystem> for DummySystem {
 }
 
 #[derive(Clone)]
-pub struct Systems {
+pub struct Systems<S>
+where
+    S: Clone + AuthenticateRequest,
+{
     odata_id: odata_v4::Id,
     systems: Arc<Mutex<Vec<DummySystem>>>,
-    auth_handler: AuthHandler,
+    auth_handler: S,
 }
 
-impl Systems {
-    pub fn new(
-        odata_id: odata_v4::Id,
-        systems: Vec<DummySystem>,
-        auth_handler: AuthHandler,
-    ) -> Self {
+impl<S> Systems<S>
+where
+    S: Clone + AuthenticateRequest,
+{
+    pub fn new(odata_id: odata_v4::Id, systems: Vec<DummySystem>, auth_handler: S) -> Self {
         Systems {
             odata_id,
             systems: Arc::new(Mutex::new(systems)),
@@ -70,13 +72,19 @@ impl Systems {
     }
 }
 
-impl AsRef<AuthHandler> for Systems {
-    fn as_ref(&self) -> &AuthHandler {
+impl<S> AsRef<dyn AuthenticateRequest> for Systems<S>
+where
+    S: Clone + AuthenticateRequest + 'static,
+{
+    fn as_ref(&self) -> &(dyn AuthenticateRequest + 'static) {
         &self.auth_handler
     }
 }
 
-impl systems::Systems for Systems {
+impl<S> systems::Systems for Systems<S>
+where
+    S: AuthenticateRequest + Clone,
+{
     fn get(&self) -> systems::SystemsGetResponse {
         // TODO: Could probably optimize this down to one lock operation
         systems::SystemsGetResponse::Ok(ComputerSystemCollection {
@@ -104,7 +112,10 @@ impl systems::Systems for Systems {
     }
 }
 
-impl computer_system_detail::ComputerSystemDetail for Systems {
+impl<S> computer_system_detail::ComputerSystemDetail for Systems<S>
+where
+    S: Clone + AuthenticateRequest,
+{
     fn get(&self, id: String) -> computer_system_detail::ComputerSystemDetailGetResponse {
         match self
             .systems
@@ -146,7 +157,10 @@ impl computer_system_detail::ComputerSystemDetail for Systems {
     }
 }
 
-impl computer_system_detail::reset::Reset for Systems {
+impl<S> computer_system_detail::reset::Reset for Systems<S>
+where
+    S: AuthenticateRequest + Clone,
+{
     fn post(
         &mut self,
         _id: String,

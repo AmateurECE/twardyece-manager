@@ -16,9 +16,10 @@
 
 use axum::Router;
 use redfish_codegen::models::{odata_v4, resource};
-use seuss::{extract::AuthHandler, service};
+use seuss::{auth::BasicAuthenticationProxy, service};
 use tower_http::trace::TraceLayer;
 
+mod auth;
 mod endpoint;
 
 #[tokio::main]
@@ -29,7 +30,6 @@ async fn main() {
         resource::Id("example-basic".to_string()),
     );
 
-    let auth_handler = AuthHandler {};
     let systems = endpoint::Systems::new(
         odata_v4::Id("/redfish/v1/Systems".to_string()),
         vec![endpoint::DummySystem {
@@ -37,7 +37,9 @@ async fn main() {
             name: resource::Name("1".to_string()),
             ..Default::default()
         }],
-        auth_handler,
+        BasicAuthenticationProxy {
+            authenticator: auth::ExampleBasicAuthenticator,
+        },
     );
 
     let app: Router = Router::new()
