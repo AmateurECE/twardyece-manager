@@ -37,9 +37,7 @@ async fn main() {
             name: resource::Name("1".to_string()),
             ..Default::default()
         }],
-        BasicAuthenticationProxy {
-            authenticator: auth::ExampleBasicAuthenticator,
-        },
+        BasicAuthenticationProxy::new(auth::ExampleBasicAuthenticator),
     );
 
     let app: Router = Router::new()
