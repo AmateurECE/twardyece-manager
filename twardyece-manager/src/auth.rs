@@ -14,13 +14,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use seuss::auth::BasicAuthentication;
+use redfish_codegen::models::redfish;
+use seuss::auth::{AuthenticatedUser, BasicAuthentication, Role};
 
 #[derive(Clone)]
 pub struct ExampleBasicAuthenticator;
 
 impl BasicAuthentication for ExampleBasicAuthenticator {
-    fn authenticate(username: &str, password: &str) -> Result<(), String> {
-        Ok(())
+    fn authenticate(
+        &self,
+        username: String,
+        _password: String,
+    ) -> Result<AuthenticatedUser, redfish::Error> {
+        Ok(AuthenticatedUser {
+            username: username.to_string(),
+            role: Role::Administrator,
+        })
     }
 }
