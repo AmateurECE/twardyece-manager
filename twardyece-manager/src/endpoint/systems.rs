@@ -86,21 +86,16 @@ where
     S: AuthenticateRequest + Clone,
 {
     fn get(&self) -> systems::SystemsGetResponse {
-        // TODO: Could probably optimize this down to one lock operation
+        let systems = self.systems.lock().unwrap();
         systems::SystemsGetResponse::Ok(ComputerSystemCollection {
             odata_id: self.odata_id.clone(),
-            members: self
-                .systems
-                .lock()
-                .unwrap()
+            members: systems
                 .iter()
                 .map(|system| odata_v4::IdRef {
                     odata_id: Some(odata_v4::Id(system.odata_id.0.clone())),
                 })
                 .collect(),
-            members_odata_count: odata_v4::Count(
-                self.systems.lock().unwrap().len().try_into().unwrap(),
-            ),
+            members_odata_count: odata_v4::Count(systems.len().try_into().unwrap()),
             ..Default::default()
         })
     }
