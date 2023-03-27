@@ -1,0 +1,5 @@
+address: 0.0.0.0:3000
+role-map:
+  Administrator: administrators
+  Operator: operators
+  ReadOnly: readonly

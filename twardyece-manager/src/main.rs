@@ -15,16 +15,41 @@
 // limitations under the License.
 
 use axum::Router;
+use clap::Parser;
 use redfish_codegen::models::{odata_v4, resource};
-use seuss::{auth::BasicAuthenticationProxy, service};
+use seuss::{
+    auth::{BasicAuthenticationProxy, Role},
+    service,
+};
+use seuss_auth_pam::LinuxPamBasicAuthenticator;
+use std::collections::HashMap;
+use std::fs::File;
 use tower_http::trace::TraceLayer;
 
 mod auth;
 mod endpoint;
 
+#[derive(serde::Deserialize)]
+struct Configuration {
+    #[serde(rename = "role-map")]
+    role_map: HashMap<Role, String>,
+    address: String,
+}
+
+#[derive(Parser)]
+struct Args {
+    /// Configuration file
+    #[clap(value_parser, short, long)]
+    config: String,
+}
+
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
+
+    let args = Args::parse();
+    let config: Configuration = serde_yaml::from_reader(File::open(&args.config)?)?;
+
     let service_root = endpoint::ServiceRoot::new(
         resource::Name("Basic Redfish Service".to_string()),
         resource::Id("example-basic".to_string()),
@@ -37,7 +62,7 @@ async fn main() {
             name: resource::Name("1".to_string()),
             ..Default::default()
         }],
-        BasicAuthenticationProxy::new(auth::ExampleBasicAuthenticator),
+        BasicAuthenticationProxy::new(LinuxPamBasicAuthenticator::new(config.role_map)?),
     );
 
     let app: Router = Router::new()
@@ -58,8 +83,8 @@ async fn main() {
             service::computer_system_detail::reset::ResetRouter::new(systems).into(),
         )
         .layer(TraceLayer::new_for_http());
-    axum::Server::bind(&"127.0.0.1:3000".parse().unwrap())
+    axum::Server::bind(&config.address.parse().unwrap())
         .serve(app.into_make_service())
-        .await
-        .unwrap();
+        .await?;
+    Ok(())
 }
