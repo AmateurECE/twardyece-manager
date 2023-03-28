@@ -16,7 +16,7 @@
 
 use redfish_codegen::api::v1::{computer_system_detail, systems};
 use redfish_codegen::models::{
-    computer_system::v1_20_0::{ComputerSystem, ResetRequestBody},
+    computer_system::v1_20_0::{Actions, ComputerSystem, Reset, ResetRequestBody},
     computer_system_collection::ComputerSystemCollection,
     odata_v4, resource,
 };
@@ -40,10 +40,17 @@ impl Into<ComputerSystem> for DummySystem {
         } = self;
         let id = resource::Id(name.0.clone());
         ComputerSystem {
-            odata_id,
+            odata_id: odata_id.clone(),
             name,
             id,
             power_state: Some(power_state),
+            actions: Some(Actions {
+                computer_system_reset: Some(Reset {
+                    target: Some(odata_id.0 + "/Actions/ComputerSystem.Reset"),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
             ..Default::default()
         }
     }

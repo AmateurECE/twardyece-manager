@@ -31,6 +31,14 @@ impl Versions {
     }
 }
 
+impl Default for Versions {
+    fn default() -> Self {
+        let mut version_map = HashMap::new();
+        version_map.insert("v1".to_string(), "/redfish/v1".to_string());
+        Versions::new(version_map)
+    }
+}
+
 impl Into<MethodRouter> for Versions {
     fn into(self) -> MethodRouter {
         self.0
