@@ -50,6 +50,9 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let config: Configuration = serde_yaml::from_reader(File::open(&args.config)?)?;
 
+    let mut version_map = HashMap::new();
+    version_map.insert("v1".to_string(), "/redfish/v1".to_string());
+
     let service_root = endpoint::ServiceRoot::new(
         resource::Name("Basic Redfish Service".to_string()),
         resource::Id("example-basic".to_string()),
@@ -66,6 +69,7 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let app: Router = Router::new()
+        .route("/redfish", endpoint::Versions::new(version_map).into())
         .route(
             "/redfish/v1",
             service::ServiceRoot::new(service_root).into(),

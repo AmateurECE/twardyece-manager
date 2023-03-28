@@ -14,11 +14,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod service_root;
-pub use service_root::*;
+use axum::{
+    extract::State,
+    routing::{get, MethodRouter},
+    Json,
+};
+use std::collections::HashMap;
 
-mod systems;
-pub use systems::*;
+pub struct Versions(MethodRouter);
 
-mod versions;
-pub use versions::*;
+impl Versions {
+    pub fn new(versions: HashMap<String, String>) -> Self {
+        let router = get(|State(state): State<HashMap<String, String>>| async move { Json(state) })
+            .with_state(versions);
+        Self(router)
+    }
+}
+
+impl Into<MethodRouter> for Versions {
+    fn into(self) -> MethodRouter {
+        self.0
+    }
+}
