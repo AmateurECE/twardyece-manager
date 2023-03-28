@@ -14,7 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use axum::Router;
+use axum::{Router, response::Redirect, routing};
 use clap::Parser;
 use redfish_codegen::models::{odata_v4, resource};
 use seuss::{
@@ -67,8 +67,9 @@ async fn main() -> anyhow::Result<()> {
 
     let app: Router = Router::new()
         .route("/redfish", endpoint::Versions::default().into())
+        .route("/redfish/v1", routing::get(|| async { Redirect::permanent("/redfish/v1/") }))
         .route(
-            "/redfish/v1",
+            "/redfish/v1/",
             service::ServiceRoot::new(service_root).into(),
         )
         .route(
