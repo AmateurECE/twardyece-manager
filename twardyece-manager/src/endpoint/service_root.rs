@@ -17,11 +17,12 @@
 use redfish_codegen::api::v1;
 use redfish_codegen::models::{odata_v4, resource, service_root};
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ServiceRoot {
     name: resource::Name,
     id: resource::Id,
     odata_id: odata_v4::Id,
+    systems: Option<odata_v4::IdRef>,
 }
 
 impl ServiceRoot {
@@ -30,17 +31,31 @@ impl ServiceRoot {
             name,
             id,
             odata_id: odata_v4::Id(String::default()),
+            ..Default::default()
         }
+    }
+
+    pub fn enable_systems(mut self) -> Self {
+        self.systems = Some(odata_v4::IdRef {
+            odata_id: Some(odata_v4::Id("/redfish/v1/Systems".to_string())),
+        });
+        self
     }
 }
 
 impl v1::ServiceRoot for ServiceRoot {
     fn get(&self) -> v1::ServiceRootGetResponse {
-        let ServiceRoot { name, id, odata_id } = self.clone();
+        let ServiceRoot {
+            name,
+            id,
+            odata_id,
+            systems,
+        } = self.clone();
         v1::ServiceRootGetResponse::Ok(service_root::v1_15_0::ServiceRoot {
             name,
             id,
             odata_id,
+            systems: systems,
             ..Default::default()
         })
     }

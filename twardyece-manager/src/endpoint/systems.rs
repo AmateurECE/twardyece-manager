@@ -63,6 +63,7 @@ where
 {
     odata_id: odata_v4::Id,
     systems: Arc<Mutex<Vec<DummySystem>>>,
+    name: resource::Name,
     auth_handler: S,
 }
 
@@ -70,10 +71,16 @@ impl<S> Systems<S>
 where
     S: Clone + AuthenticateRequest,
 {
-    pub fn new(odata_id: odata_v4::Id, systems: Vec<DummySystem>, auth_handler: S) -> Self {
+    pub fn new(
+        odata_id: odata_v4::Id,
+        name: resource::Name,
+        systems: Vec<DummySystem>,
+        auth_handler: S,
+    ) -> Self {
         Systems {
             odata_id,
             systems: Arc::new(Mutex::new(systems)),
+            name,
             auth_handler,
         }
     }
@@ -102,6 +109,7 @@ where
                     odata_id: Some(odata_v4::Id(system.odata_id.0.clone())),
                 })
                 .collect(),
+            name: self.name.clone(),
             members_odata_count: odata_v4::Count(systems.len().try_into().unwrap()),
             ..Default::default()
         })
