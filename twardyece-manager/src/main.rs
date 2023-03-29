@@ -15,13 +15,18 @@
 // limitations under the License.
 
 use axum::{response::Redirect, routing, Router};
+use axum_server::Handle;
 use clap::Parser;
+use futures::future::FutureExt;
+use futures::stream::StreamExt;
 use redfish_codegen::models::{odata_v4, resource};
 use seuss::{
     auth::{BasicAuthenticationProxy, Role},
     service,
 };
 use seuss_auth_pam::LinuxPamBasicAuthenticator;
+use signal_hook::consts::{SIGINT, SIGTERM};
+use signal_hook_tokio::Signals;
 use std::collections::HashMap;
 use std::fs::File;
 use tower_http::trace::TraceLayer;
@@ -54,7 +59,8 @@ async fn main() -> anyhow::Result<()> {
         resource::Name("Basic Redfish Service".to_string()),
         resource::Id("example-basic".to_string()),
     )
-    .enable_systems();
+    .enable_systems()
+    .enable_session_service();
 
     let systems = endpoint::Systems::new(
         odata_v4::Id("/redfish/v1/Systems".to_string()),
@@ -89,9 +95,33 @@ async fn main() -> anyhow::Result<()> {
             "/redfish/v1/Systems/:name/Actions/ComputerSystem.Reset",
             service::computer_system_detail::reset::ResetRouter::new(systems).into(),
         )
+        .route(
+            "/redfish/v1/SessionService",
+            service::SessionService::new(endpoint::SessionService::new()).into(),
+        )
         .layer(TraceLayer::new_for_http());
-    axum::Server::bind(&config.address.parse().unwrap())
+
+    let server_handle = Handle::new();
+    let signals = Signals::new(&[SIGINT, SIGTERM])?;
+    let signals_handle = signals.handle();
+    let signal_handler = |mut signals: Signals| async move {
+        if let Some(_) = signals.next().await {
+            println!("Gracefully shutting down");
+            server_handle.shutdown();
+        }
+    };
+
+    let signals_task = tokio::spawn(signal_handler(signals)).fuse();
+    let server = axum_server::bind(config.address.parse().unwrap())
         .serve(app.into_make_service())
-        .await?;
+        .fuse();
+
+    futures::pin_mut!(signals_task, server);
+    futures::select! {
+        _ = server => {},
+        _ = signals_task => {},
+    };
+
+    signals_handle.close();
     Ok(())
 }
