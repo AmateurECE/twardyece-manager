@@ -15,6 +15,7 @@
 // limitations under the License.
 
 use redfish_codegen::api::v1;
+use redfish_codegen::models::service_root::v1_15_0::Links;
 use redfish_codegen::models::{odata_v4, resource, service_root};
 
 #[derive(Clone, Default)]
@@ -24,6 +25,7 @@ pub struct ServiceRoot {
     odata_id: odata_v4::Id,
     systems: Option<odata_v4::IdRef>,
     session_service: Option<odata_v4::IdRef>,
+    sessions_link: odata_v4::IdRef,
 }
 
 impl ServiceRoot {
@@ -43,10 +45,13 @@ impl ServiceRoot {
         self
     }
 
-    pub fn enable_session_service(mut self) -> Self {
+    pub fn enable_sessions(mut self, session_collection_id: odata_v4::Id) -> Self {
         self.session_service = Some(odata_v4::IdRef {
             odata_id: Some(odata_v4::Id("/redfish/v1/SessionService".to_string())),
         });
+        self.sessions_link = odata_v4::IdRef {
+            odata_id: Some(session_collection_id),
+        };
         self
     }
 }
@@ -59,6 +64,7 @@ impl v1::ServiceRoot for ServiceRoot {
             odata_id,
             systems,
             session_service,
+            sessions_link,
         } = self.clone();
         v1::ServiceRootGetResponse::Ok(service_root::v1_15_0::ServiceRoot {
             name,
@@ -66,6 +72,10 @@ impl v1::ServiceRoot for ServiceRoot {
             odata_id,
             systems,
             session_service,
+            links: Links {
+                sessions: sessions_link,
+                ..Default::default()
+            },
             ..Default::default()
         })
     }

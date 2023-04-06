@@ -55,12 +55,16 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let config: Configuration = serde_yaml::from_reader(File::open(&args.config)?)?;
 
+    let sessions: &'static str = "/redfish/v1/SessionService/Sessions";
+
     let service_root = endpoint::ServiceRoot::new(
         resource::Name("Basic Redfish Service".to_string()),
         resource::Id("example-basic".to_string()),
     )
     .enable_systems()
-    .enable_session_service();
+    .enable_sessions(odata_v4::Id(sessions.to_string()));
+
+    let proxy = BasicAuthenticationProxy::new(LinuxPamBasicAuthenticator::new(config.role_map)?);
 
     let systems = endpoint::Systems::new(
         odata_v4::Id("/redfish/v1/Systems".to_string()),
@@ -70,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
             name: resource::Name("1".to_string()),
             ..Default::default()
         }],
-        BasicAuthenticationProxy::new(LinuxPamBasicAuthenticator::new(config.role_map)?),
+        proxy.clone(),
     );
 
     let app: Router = Router::new()
@@ -97,7 +101,22 @@ async fn main() -> anyhow::Result<()> {
         )
         .route(
             "/redfish/v1/SessionService",
-            service::SessionService::new(endpoint::SessionService::new()).into(),
+            service::SessionService::new(endpoint::DisabledSessionService::new(
+                odata_v4::Id("/redfish/v1/SessionService".to_string()),
+                resource::Name("Stub Session Service".to_string()),
+                odata_v4::Id(sessions.to_string()),
+                proxy.clone(),
+            ))
+            .into(),
+        )
+        .route(
+            sessions,
+            service::sessions::Sessions::new(endpoint::EmptySessionCollection::new(
+                odata_v4::Id(sessions.to_string()),
+                resource::Name("Session Collection".to_string()),
+                proxy,
+            ))
+            .into(),
         )
         .layer(TraceLayer::new_for_http());
 
