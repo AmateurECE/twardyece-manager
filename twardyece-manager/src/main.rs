@@ -14,7 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use axum::{response::Redirect, routing, Router};
+use axum::{response::Redirect, Router};
 use axum_server::Handle;
 use clap::Parser;
 use futures::future::FutureExt;
@@ -22,7 +22,7 @@ use futures::stream::StreamExt;
 use redfish_codegen::models::{odata_v4, resource};
 use seuss::{
     auth::{BasicAuthenticationProxy, Role},
-    service,
+    routing,
 };
 use seuss_auth_pam::LinuxPamBasicAuthenticator;
 use signal_hook::consts::{SIGINT, SIGTERM};
@@ -81,27 +81,27 @@ async fn main() -> anyhow::Result<()> {
         .route("/redfish", endpoint::Versions::default().into())
         .route(
             "/redfish/v1",
-            routing::get(|| async { Redirect::permanent("/redfish/v1/") }),
+            axum::routing::get(|| async { Redirect::permanent("/redfish/v1/") }),
         )
         .route(
             "/redfish/v1/",
-            service::ServiceRoot::new(service_root).into(),
+            routing::ServiceRoot::new(service_root).into(),
         )
         .route(
             "/redfish/v1/Systems",
-            service::Systems::new(systems.clone()).into(),
+            routing::Systems::new(systems.clone()).into(),
         )
         .route(
             "/redfish/v1/Systems/:name",
-            service::computer_system_detail::ComputerSystemDetail::new(systems.clone()).into(),
+            routing::computer_system_detail::ComputerSystemDetail::new(systems.clone()).into(),
         )
         .route(
             "/redfish/v1/Systems/:name/Actions/ComputerSystem.Reset",
-            service::computer_system_detail::reset::ResetRouter::new(systems).into(),
+            routing::computer_system_detail::reset::ResetRouter::new(systems).into(),
         )
         .route(
             "/redfish/v1/SessionService",
-            service::SessionService::new(endpoint::DisabledSessionService::new(
+            routing::SessionService::new(endpoint::DisabledSessionService::new(
                 odata_v4::Id("/redfish/v1/SessionService".to_string()),
                 resource::Name("Stub Session Service".to_string()),
                 odata_v4::Id(sessions.to_string()),
@@ -111,7 +111,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .route(
             sessions,
-            service::sessions::Sessions::new(endpoint::EmptySessionCollection::new(
+            routing::sessions::Sessions::new(endpoint::EmptySessionCollection::new(
                 odata_v4::Id(sessions.to_string()),
                 resource::Name("Session Collection".to_string()),
                 proxy,
