@@ -22,6 +22,3 @@ pub use systems::*;
 
 mod versions;
 pub use versions::*;
-
-mod session_service;
-pub use session_service::*;

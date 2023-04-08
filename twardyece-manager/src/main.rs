@@ -22,7 +22,7 @@ use futures::stream::StreamExt;
 use redfish_codegen::models::{odata_v4, resource};
 use seuss::{
     auth::{BasicAuthenticationProxy, Role},
-    routing,
+    routing, service,
 };
 use seuss_auth_pam::LinuxPamBasicAuthenticator;
 use signal_hook::consts::{SIGINT, SIGTERM};
@@ -101,7 +101,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .route(
             "/redfish/v1/SessionService",
-            routing::SessionService::new(endpoint::DisabledSessionService::new(
+            routing::SessionService::new(service::SessionService::new(
                 odata_v4::Id("/redfish/v1/SessionService".to_string()),
                 resource::Name("Stub Session Service".to_string()),
                 odata_v4::Id(sessions.to_string()),
@@ -111,7 +111,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .route(
             sessions,
-            routing::sessions::Sessions::new(endpoint::EmptySessionCollection::new(
+            routing::sessions::Sessions::new(service::SessionCollection::new(
                 odata_v4::Id(sessions.to_string()),
                 resource::Name("Session Collection".to_string()),
                 proxy,
