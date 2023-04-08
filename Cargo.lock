@@ -814,19 +814,11 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "base64",
+ "pam",
  "redfish-codegen",
  "serde",
  "serde_json",
  "tokio",
-]
-
-[[package]]
-name = "seuss-auth-pam"
-version = "0.1.0"
-dependencies = [
- "pam",
- "redfish-codegen",
- "seuss",
  "users 0.11.0",
 ]
 
@@ -1107,7 +1099,6 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "seuss",
- "seuss-auth-pam",
  "signal-hook",
  "signal-hook-tokio",
  "tokio",
