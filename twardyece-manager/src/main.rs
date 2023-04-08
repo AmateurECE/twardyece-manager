@@ -21,7 +21,7 @@ use futures::future::FutureExt;
 use futures::stream::StreamExt;
 use redfish_codegen::models::{odata_v4, resource};
 use seuss::{
-    auth::{pam::LinuxPamAuthenticator, BasicAuthenticationProxy, Role},
+    auth::{pam::LinuxPamAuthenticator, CombinedAuthenticationProxy, Role},
     routing, service,
 };
 use signal_hook::consts::{SIGINT, SIGTERM};
@@ -64,7 +64,8 @@ async fn main() -> anyhow::Result<()> {
     .enable_sessions(odata_v4::Id(sessions.to_string()));
 
     let authenticator = LinuxPamAuthenticator::new(config.role_map)?;
-    let proxy = BasicAuthenticationProxy::new(authenticator.clone());
+    let session_collection = service::InMemorySessionManager::new(authenticator.clone());
+    let proxy = CombinedAuthenticationProxy::new(session_collection.clone(), authenticator);
 
     let systems = endpoint::Systems::new(
         odata_v4::Id("/redfish/v1/Systems".to_string()),
@@ -111,11 +112,11 @@ async fn main() -> anyhow::Result<()> {
         )
         .route(
             sessions,
-            routing::sessions::Sessions::new(service::InMemorySessionCollection::new(
+            routing::sessions::Sessions::new(service::SessionCollection::new(
                 odata_v4::Id(sessions.to_string()),
                 resource::Name("Session Collection".to_string()),
                 proxy,
-                authenticator,
+                session_collection.clone(),
             ))
             .into(),
         )
