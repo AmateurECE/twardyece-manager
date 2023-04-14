@@ -22,7 +22,8 @@ use futures::stream::StreamExt;
 use redfish_codegen::models::{odata_v4, resource};
 use seuss::{
     auth::{pam::LinuxPamAuthenticator, CombinedAuthenticationProxy, Role},
-    routing, service,
+    routing,
+    service::{self, session_manager::InMemorySessionManager},
 };
 use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook_tokio::Signals;
@@ -64,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
     .enable_sessions(odata_v4::Id(sessions.to_string()));
 
     let authenticator = LinuxPamAuthenticator::new(config.role_map)?;
-    let session_collection = service::InMemorySessionManager::new(authenticator.clone());
+    let session_collection = InMemorySessionManager::new(authenticator.clone());
     let proxy = CombinedAuthenticationProxy::new(session_collection.clone(), authenticator);
 
     let systems = endpoint::Systems::new(
