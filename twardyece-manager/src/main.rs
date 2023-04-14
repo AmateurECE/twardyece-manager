@@ -65,7 +65,8 @@ async fn main() -> anyhow::Result<()> {
     .enable_sessions(odata_v4::Id(sessions.to_string()));
 
     let authenticator = LinuxPamAuthenticator::new(config.role_map)?;
-    let session_collection = InMemorySessionManager::new(authenticator.clone(), odata_v4::Id(sessions.to_string()));
+    let session_collection =
+        InMemorySessionManager::new(authenticator.clone(), odata_v4::Id(sessions.to_string()));
     let proxy = CombinedAuthenticationProxy::new(session_collection.clone(), authenticator);
 
     let systems = endpoint::Systems::new(
@@ -80,7 +81,7 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let app: Router = Router::new()
-        .route("/redfish", endpoint::Versions::default().into())
+        .route("/redfish", service::RedfishVersions::default().into())
         .route(
             "/redfish/v1",
             axum::routing::get(|| async { Redirect::permanent("/redfish/v1/") }),
