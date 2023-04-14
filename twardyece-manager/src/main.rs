@@ -65,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
     .enable_sessions(odata_v4::Id(sessions.to_string()));
 
     let authenticator = LinuxPamAuthenticator::new(config.role_map)?;
-    let session_collection = InMemorySessionManager::new(authenticator.clone());
+    let session_collection = InMemorySessionManager::new(authenticator.clone(), odata_v4::Id(sessions.to_string()));
     let proxy = CombinedAuthenticationProxy::new(session_collection.clone(), authenticator);
 
     let systems = endpoint::Systems::new(
