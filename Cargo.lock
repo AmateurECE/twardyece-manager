@@ -853,7 +853,6 @@ name = "redfish-codegen"
 version = "0.2.0"
 dependencies = [
  "derivative",
- "hyper",
  "redfish-macros",
  "serde",
  "serde_json",

@@ -64,6 +64,11 @@ async fn main() -> anyhow::Result<()> {
     .enable_systems()
     .enable_sessions(odata_v4::Id(sessions.to_string()));
 
+    let service_document = service::OData::new()
+        .enable_systems()
+        .enable_session_service()
+        .enable_sessions();
+
     let authenticator = LinuxPamAuthenticator::new(config.role_map)?;
     let session_collection =
         InMemorySessionManager::new(authenticator.clone(), odata_v4::Id(sessions.to_string()));
@@ -90,10 +95,7 @@ async fn main() -> anyhow::Result<()> {
             "/redfish/v1/",
             routing::ServiceRoot::new(service_root).into(),
         )
-        .route(
-            "/redfish/v1/odata",
-            service::OData::new().enable_systems().into(),
-        )
+        .route("/redfish/v1/odata", service_document.into())
         .route(
             "/redfish/v1/Systems",
             routing::Systems::new(systems.clone()).into(),
