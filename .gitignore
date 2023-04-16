@@ -1,1 +1,3 @@
 /target/
+/test/manager-cert.pem
+/test/manager-key.pem

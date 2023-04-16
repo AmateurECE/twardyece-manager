@@ -14,8 +14,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use axum::{response::Redirect, Router};
-use axum_server::Handle;
+use axum::{
+    extract::Host,
+    handler::HandlerWithoutStateExt,
+    http::{StatusCode, Uri},
+    response::Redirect,
+    Router,
+};
+use axum_server::{tls_rustls::RustlsConfig, Handle};
 use clap::Parser;
 use futures::future::FutureExt;
 use futures::stream::StreamExt;
@@ -27,18 +33,29 @@ use seuss::{
 };
 use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook_tokio::Signals;
-use std::collections::HashMap;
 use std::fs::File;
-use tower_http::trace::TraceLayer;
+use std::{collections::HashMap, net::SocketAddr, path::PathBuf};
+use tower_http::{trace::TraceLayer, BoxError};
 
 mod auth;
 mod endpoint;
+
+#[derive(Copy, Clone, serde::Deserialize)]
+struct Ports {
+    http: u16,
+    https: u16,
+}
 
 #[derive(serde::Deserialize)]
 struct Configuration {
     #[serde(rename = "role-map")]
     role_map: HashMap<Role, String>,
     address: String,
+    ports: Ports,
+    #[serde(rename = "certificate-file")]
+    certificate_file: String,
+    #[serde(rename = "key-file")]
+    key_file: String,
 }
 
 #[derive(Parser)]
@@ -46,6 +63,41 @@ struct Args {
     /// Configuration file
     #[clap(value_parser, short, long)]
     config: String,
+}
+
+async fn redirect_http_to_https(address: String, ports: Ports) {
+    fn make_https(host: String, uri: Uri, ports: Ports) -> Result<Uri, BoxError> {
+        let mut parts = uri.into_parts();
+
+        parts.scheme = Some(axum::http::uri::Scheme::HTTPS);
+
+        if parts.path_and_query.is_none() {
+            parts.path_and_query = Some("/".parse().unwrap());
+        }
+
+        let https_host = host.replace(&ports.http.to_string(), &ports.https.to_string());
+        parts.authority = Some(https_host.parse()?);
+
+        Ok(Uri::from_parts(parts)?)
+    }
+
+    let redirect = move |Host(host): Host, uri: Uri| async move {
+        match make_https(host, uri, ports) {
+            Ok(uri) => Ok(Redirect::permanent(&uri.to_string())),
+            Err(error) => {
+                tracing::warn!(%error, "failed to convert URI to HTTPS");
+                Err(StatusCode::BAD_REQUEST)
+            }
+        }
+    };
+
+    let addr: SocketAddr = (address + ":" + &ports.http.to_string()).parse().unwrap();
+    tracing::debug!("http redirect listening on {}", addr);
+
+    axum::Server::bind(&addr)
+        .serve(redirect.into_make_service())
+        .await
+        .unwrap();
 }
 
 #[tokio::main]
@@ -96,7 +148,10 @@ async fn main() -> anyhow::Result<()> {
             routing::ServiceRoot::new(service_root).into(),
         )
         .route("/redfish/v1/odata", service_document.into())
-        .route("/redfish/v1/$metadata", redfish_codegen::routing::Metadata.into())
+        .route(
+            "/redfish/v1/$metadata",
+            redfish_codegen::routing::Metadata.into(),
+        )
         .route(
             "/redfish/v1/Systems",
             routing::Systems::new(systems.clone()).into(),
@@ -141,14 +196,25 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    let tls_config = RustlsConfig::from_pem_file(
+        PathBuf::from(config.certificate_file),
+        PathBuf::from(config.key_file),
+    )
+    .await
+    .unwrap();
+
+    let https_address = config.address.clone() + ":" + &config.ports.https.to_string();
+
     let signals_task = tokio::spawn(signal_handler(signals)).fuse();
-    let server = axum_server::bind(config.address.parse().unwrap())
+    let https_server = axum_server::bind_rustls(https_address.parse().unwrap(), tls_config)
         .serve(app.into_make_service())
         .fuse();
+    let http_server = tokio::spawn(redirect_http_to_https(config.address, config.ports)).fuse();
 
-    futures::pin_mut!(signals_task, server);
+    futures::pin_mut!(signals_task, https_server, http_server);
     futures::select! {
-        _ = server => {},
+        _ = https_server => {},
+        _ = http_server => {},
         _ = signals_task => {},
     };
 

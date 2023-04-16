@@ -1,5 +1,10 @@
-address: 0.0.0.0:3000
+address: 0.0.0.0
+ports:
+  https: 3001
+  http: 3000
 role-map:
   Administrator: administrators
   Operator: operators
   ReadOnly: readonly
+certificate-file: /etc/redfish/twardyece-manager-cert.pem
+key-file: /etc/redfish/twardyece-manager-key.pem
