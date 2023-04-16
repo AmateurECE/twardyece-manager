@@ -116,7 +116,7 @@ async fn main() -> anyhow::Result<()> {
     .enable_systems()
     .enable_sessions(odata_v4::Id(sessions.to_string()));
 
-    let service_document = service::OData::new()
+    let service_document = routing::OData::new()
         .enable_systems()
         .enable_session_service()
         .enable_sessions();
@@ -138,7 +138,7 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let app: Router = Router::new()
-        .route("/redfish", service::RedfishVersions::default().into())
+        .route("/redfish", routing::RedfishVersions::default().into())
         .route(
             "/redfish/v1",
             axum::routing::get(|| async { Redirect::permanent("/redfish/v1/") }),
@@ -148,10 +148,7 @@ async fn main() -> anyhow::Result<()> {
             routing::ServiceRoot::new(service_root).into(),
         )
         .route("/redfish/v1/odata", service_document.into())
-        .route(
-            "/redfish/v1/$metadata",
-            redfish_codegen::routing::Metadata.into(),
-        )
+        .route("/redfish/v1/$metadata", routing::Metadata.into())
         .route(
             "/redfish/v1/Systems",
             routing::Systems::new(systems.clone()).into(),
