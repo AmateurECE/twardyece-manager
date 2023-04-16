@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 axum = "0.6.11"
-redfish-codegen = { version = "0.2.0", path = "../../redfish-codegen/redfish-codegen" }
+redfish-codegen = { version = "0.2.0", path = "../../redfish-codegen/redfish-codegen", features = ["routing"] }
 serde_json = "1.0.94"
 seuss = { version = "0.1.0", path = "../../redfish-codegen/seuss", features = ["serde", "auth-pam"] }
 tokio = { version = "1.26.0", features = ["full"] }

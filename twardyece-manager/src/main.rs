@@ -96,6 +96,7 @@ async fn main() -> anyhow::Result<()> {
             routing::ServiceRoot::new(service_root).into(),
         )
         .route("/redfish/v1/odata", service_document.into())
+        .route("/redfish/v1/$metadata", redfish_codegen::routing::Metadata.into())
         .route(
             "/redfish/v1/Systems",
             routing::Systems::new(systems.clone()).into(),
