@@ -1,0 +1,16 @@
+[package]
+name = "di-service"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.71"
+clap = { version = "4.3.0", features = ["derive"] }
+serde = { version = "1.0.163", features = ["derive"] }
+serde_yaml = "0.9.21"
+tokio = { version = "1.28.1", features = ["full"] }
+
+redfish-codegen = { version = "0.2.0", path = "../../redfish-codegen/redfish-codegen", features = ["routing"] }
+redfish-service = { version = "0.1.0", path = "../redfish-service" }
+seuss = { version = "0.1.0", path = "../../redfish-codegen/seuss", features = ["serde", "auth-pam"] }
+axum = "0.6.18"

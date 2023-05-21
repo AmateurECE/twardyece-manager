@@ -2,4 +2,5 @@
 members = [
     "twardyece-manager",
     "redfish-service",
+    "di-service",
 ]
