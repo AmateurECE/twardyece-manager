@@ -1,0 +1,15 @@
+[package]
+name = "redfish-service"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.71"
+axum = "0.6.18"
+axum-server = { version = "0.5.1", features = ["tls-rustls"] }
+futures = "0.3.28"
+serde = { version = "1.0.163", features = ["derive"] }
+signal-hook = "0.3.15"
+signal-hook-tokio = { version = "0.3.1", features = ["futures-v0_3"] }
+tokio = "1.28.1"
+tracing = "0.1.37"
