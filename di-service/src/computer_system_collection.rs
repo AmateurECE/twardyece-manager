@@ -16,7 +16,7 @@
 
 use core::future::Future;
 
-use axum::{Router, routing::MethodRouter, http::StatusCode, Json};
+use axum::{Router, routing::MethodRouter, http::{StatusCode, Request}, Json, body::Body, RequestExt, extract::rejection::JsonRejection};
 use redfish_codegen::{models::computer_system_collection::ComputerSystemCollection as Model, registries::base::v1_15_0::Base};
 use seuss::redfish_error;
 
@@ -46,6 +46,18 @@ impl ComputerSystemCollection {
             let handler = handler.clone();
             let response = handler().await;
             (response.status, Json(response.value))
+        }))
+    }
+
+    pub fn create<Fn, Fut>(self, handler: Fn) -> Self
+    where Fn: FnOnce(Model) -> Fut + Clone + Send + 'static,
+    Fut: Future<Output = QueryResponse<Model>> + Send,
+    {
+        Self(self.0.post(|request: Request<Body>| async move {
+            let handler = handler.clone();
+            let Json(body): Json<Model> = request.extract().await?;
+            let response = handler(body).await;
+            Ok::<_, JsonRejection>((response.status, Json(response.value)))
         }))
     }
 }

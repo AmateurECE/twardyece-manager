@@ -25,6 +25,7 @@ mod computer_system_collection;
 
 use computer_system_collection::{ComputerSystemCollection, QueryResponse};
 use tower_http::trace::TraceLayer;
+use tracing::{event, Level};
 
 #[derive(Parser)]
 struct Args {
@@ -50,6 +51,10 @@ async fn main() -> anyhow::Result<()> {
         .nest("/redfish/v1/Systems", ComputerSystemCollection::default()
             .read(|| async {
                 let model = Model::default();
+                QueryResponse::<Model>::from(model)
+            })
+            .create(|model: Model| async {
+                event!(Level::INFO, "{}", &serde_json::to_string(&model).unwrap());
                 QueryResponse::<Model>::from(model)
             })
             .into()
