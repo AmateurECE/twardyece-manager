@@ -16,10 +16,15 @@
 
 use std::{collections::HashMap, fs::File};
 
-use axum::{Router, Json, routing};
+use axum::Router;
 use clap::Parser;
-use redfish_codegen::models::computer_system_collection::ComputerSystemCollection;
 use seuss::auth::Role;
+use redfish_codegen::models::computer_system_collection::ComputerSystemCollection as Model;
+
+mod computer_system_collection;
+
+use computer_system_collection::{ComputerSystemCollection, QueryResponse};
+use tower_http::trace::TraceLayer;
 
 #[derive(Parser)]
 struct Args {
@@ -29,6 +34,7 @@ struct Args {
 }
 
 #[derive(serde::Deserialize)]
+#[allow(dead_code)]
 struct Configuration {
     #[serde(rename = "role-map")]
     role_map: HashMap<Role, String>,
@@ -37,12 +43,18 @@ struct Configuration {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
     let args = Args::parse();
     let config: Configuration = serde_yaml::from_reader(File::open(&args.config)?)?;
     let app = Router::new()
-        .route("/redfish/v1/Systems", routing::get(|| async {
-            Json(ComputerSystemCollection::default())
-        }));
+        .nest("/redfish/v1/Systems", ComputerSystemCollection::default()
+            .read(|| async {
+                let model = Model::default();
+                QueryResponse::<Model>::from(model)
+            })
+            .into()
+        )
+        .layer(TraceLayer::new_for_http());
     
     redfish_service::serve(config.server, app).await
 }

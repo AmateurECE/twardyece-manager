@@ -14,3 +14,5 @@ redfish-codegen = { version = "0.2.0", path = "../../redfish-codegen/redfish-cod
 redfish-service = { version = "0.1.0", path = "../redfish-service" }
 seuss = { version = "0.1.0", path = "../../redfish-codegen/seuss", features = ["serde", "auth-pam"] }
 axum = "0.6.18"
+tower-http = { version = "0.4.0", features = ["trace"] }
+tracing-subscriber = "0.3.17"
