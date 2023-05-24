@@ -16,8 +16,9 @@
 
 use core::future::Future;
 
-use axum::{Router, routing::get, http::StatusCode, Json};
-use redfish_codegen::models::computer_system_collection::ComputerSystemCollection as Model;
+use axum::{Router, routing::MethodRouter, http::StatusCode, Json};
+use redfish_codegen::{models::computer_system_collection::ComputerSystemCollection as Model, registries::base::v1_15_0::Base};
+use seuss::redfish_error;
 
 pub struct QueryResponse<T> {
     status: StatusCode,
@@ -34,23 +35,26 @@ impl<T> From<T> for QueryResponse<T> {
 }
 
 #[derive(Default)]
-pub struct ComputerSystemCollection(Router);
+pub struct ComputerSystemCollection(MethodRouter);
 
 impl ComputerSystemCollection {
     pub fn read<Fn, Fut>(self, handler: Fn) -> Self
-    where Fn: FnOnce() -> Fut + Clone + Send + Sync + 'static,
-    Fut: Future<Output = QueryResponse<Model>> + Send + Sync + 'static,
+    where Fn: FnOnce() -> Fut + Clone + Send + 'static,
+    Fut: Future<Output = QueryResponse<Model>> + Send,
     {
-        Self(self.0.route("/", get(|| async move {
+        Self(self.0.get(|| async move {
             let handler = handler.clone();
             let response = handler().await;
             (response.status, Json(response.value))
-        })))
+        }))
     }
 }
 
 impl Into<Router> for ComputerSystemCollection {
     fn into(self) -> Router {
-        self.0
+        Router::new()
+            .route("/", self.0.fallback(|| async {
+                (StatusCode::METHOD_NOT_ALLOWED, Json(redfish_error::one_message(Base::OperationNotAllowed.into())))
+            }))
     }
 }
