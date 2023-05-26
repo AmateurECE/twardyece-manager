@@ -16,7 +16,7 @@
 
 use core::future::Future;
 
-use axum::{Router, routing::MethodRouter, http::{StatusCode, Request}, Json, body::Body, RequestExt, extract::rejection::JsonRejection, response::IntoResponse};
+use axum::{Router, routing::MethodRouter, http::{StatusCode, Request}, Json, body::Body, RequestExt, extract::{rejection::JsonRejection, FromRequest}, response::IntoResponse};
 use redfish_codegen::{models::{computer_system_collection::ComputerSystemCollection as Model, redfish}, registries::base::v1_15_0::Base};
 use seuss::redfish_error;
 use tracing::{event, Level};
@@ -43,15 +43,19 @@ impl ComputerSystemCollection {
         }))
     }
 
-    pub fn create<Fn, Fut, R>(self, handler: Fn) -> Self
-    where Fn: FnOnce(Model) -> Fut + Clone + Send + 'static,
+    pub fn create<Fn, Fut, B, R>(self, handler: Fn) -> Self
+    where Fn: FnOnce(B) -> Fut + Clone + Send + 'static,
     Fut: Future<Output = R> + Send,
+    B: FromRequest<(), Body> + Send,
     R: IntoResponse + Send,
     {
         Self(self.0.post(|request: Request<Body>| async move {
             let handler = handler.clone();
-            let Json(body): Json<Model> = request.extract().await?;
-            Ok::<_, JsonRejection>(handler(body).await)
+            let body = match B::from_request(request, &()).await {
+                Ok(value) => value,
+                Err(rejection) => return rejection.into_response(),
+            };
+            handler(body).await.into_response()
         }))
     }
 }

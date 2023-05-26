@@ -55,7 +55,7 @@ async fn main() -> anyhow::Result<()> {
                 let model = Model::default();
                 Json(model)
             })
-            .create(|model: Model| async {
+            .create(|Json(model): Json<Model>| async {
                 event!(Level::INFO, "{}", &serde_json::to_string(&model).map_err(redfish_map_err)?);
                 Ok::<_, (StatusCode, Json<redfish::Error>)>(Json(model))
             })
