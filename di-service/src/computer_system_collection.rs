@@ -16,8 +16,8 @@
 
 use core::future::Future;
 
-use axum::{Router, routing::MethodRouter, http::{StatusCode, Request}, Json, body::Body, RequestExt, extract::{rejection::JsonRejection, FromRequest}, response::IntoResponse};
-use redfish_codegen::{models::{computer_system_collection::ComputerSystemCollection as Model, redfish}, registries::base::v1_15_0::Base};
+use axum::{Router, routing::MethodRouter, http::{StatusCode, Request}, Json, body::Body, extract::FromRequest, response::IntoResponse};
+use redfish_codegen::{models::redfish, registries::base::v1_15_0::Base};
 use seuss::redfish_error;
 use tracing::{event, Level};
 
