@@ -16,48 +16,42 @@
 
 use core::future::Future;
 
-use axum::{Router, routing::MethodRouter, http::{StatusCode, Request}, Json, body::Body, RequestExt, extract::rejection::JsonRejection};
-use redfish_codegen::{models::computer_system_collection::ComputerSystemCollection as Model, registries::base::v1_15_0::Base};
+use axum::{Router, routing::MethodRouter, http::{StatusCode, Request}, Json, body::Body, RequestExt, extract::rejection::JsonRejection, response::IntoResponse};
+use redfish_codegen::{models::{computer_system_collection::ComputerSystemCollection as Model, redfish}, registries::base::v1_15_0::Base};
 use seuss::redfish_error;
+use tracing::{event, Level};
 
-pub struct QueryResponse<T> {
-    status: StatusCode,
-    value: T,
-}
-
-impl<T> From<T> for QueryResponse<T> {
-    fn from(value: T) -> Self {
-        Self {
-            status: StatusCode::OK,
-            value,
-        }
-    }
+pub fn redfish_map_err<E>(error: E) -> (StatusCode, Json<redfish::Error>)
+where E: std::fmt::Display,
+{
+    event!(Level::ERROR, "{}", &error);
+    (StatusCode::BAD_REQUEST, Json(redfish_error::one_message(Base::InternalError.into())))
 }
 
 #[derive(Default)]
 pub struct ComputerSystemCollection(MethodRouter);
 
 impl ComputerSystemCollection {
-    pub fn read<Fn, Fut>(self, handler: Fn) -> Self
+    pub fn read<Fn, Fut, R>(self, handler: Fn) -> Self
     where Fn: FnOnce() -> Fut + Clone + Send + 'static,
-    Fut: Future<Output = QueryResponse<Model>> + Send,
+    Fut: Future<Output = R> + Send,
+    R: IntoResponse + Send,
     {
         Self(self.0.get(|| async move {
             let handler = handler.clone();
-            let response = handler().await;
-            (response.status, Json(response.value))
+            handler().await
         }))
     }
 
-    pub fn create<Fn, Fut>(self, handler: Fn) -> Self
+    pub fn create<Fn, Fut, R>(self, handler: Fn) -> Self
     where Fn: FnOnce(Model) -> Fut + Clone + Send + 'static,
-    Fut: Future<Output = QueryResponse<Model>> + Send,
+    Fut: Future<Output = R> + Send,
+    R: IntoResponse + Send,
     {
         Self(self.0.post(|request: Request<Body>| async move {
             let handler = handler.clone();
             let Json(body): Json<Model> = request.extract().await?;
-            let response = handler(body).await;
-            Ok::<_, JsonRejection>((response.status, Json(response.value)))
+            Ok::<_, JsonRejection>(handler(body).await)
         }))
     }
 }

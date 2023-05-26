@@ -16,16 +16,18 @@
 
 use std::{collections::HashMap, fs::File};
 
-use axum::Router;
+use axum::{Router, Json, http::StatusCode};
 use clap::Parser;
 use seuss::auth::Role;
-use redfish_codegen::models::computer_system_collection::ComputerSystemCollection as Model;
+use redfish_codegen::models::{computer_system_collection::ComputerSystemCollection as Model, redfish};
 
 mod computer_system_collection;
 
-use computer_system_collection::{ComputerSystemCollection, QueryResponse};
+use computer_system_collection::ComputerSystemCollection;
 use tower_http::trace::TraceLayer;
 use tracing::{event, Level};
+
+use crate::computer_system_collection::redfish_map_err;
 
 #[derive(Parser)]
 struct Args {
@@ -51,11 +53,11 @@ async fn main() -> anyhow::Result<()> {
         .nest("/redfish/v1/Systems", ComputerSystemCollection::default()
             .read(|| async {
                 let model = Model::default();
-                QueryResponse::<Model>::from(model)
+                Json(model)
             })
             .create(|model: Model| async {
-                event!(Level::INFO, "{}", &serde_json::to_string(&model).unwrap());
-                QueryResponse::<Model>::from(model)
+                event!(Level::INFO, "{}", &serde_json::to_string(&model).map_err(redfish_map_err)?);
+                Ok::<_, (StatusCode, Json<redfish::Error>)>(Json(model))
             })
             .into()
         )
