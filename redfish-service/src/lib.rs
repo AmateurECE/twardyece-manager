@@ -16,10 +16,16 @@
 
 use std::{net::SocketAddr, path::PathBuf};
 
-use axum::{http::{Uri, StatusCode}, BoxError, extract::Host, response::Redirect, Router, handler::HandlerWithoutStateExt};
-use axum_server::{Handle, tls_rustls::RustlsConfig};
-use futures::{StreamExt, FutureExt};
-use signal_hook::consts::{SIGTERM, SIGINT};
+use axum::{
+    extract::Host,
+    handler::HandlerWithoutStateExt,
+    http::{StatusCode, Uri},
+    response::Redirect,
+    BoxError, Router,
+};
+use axum_server::{tls_rustls::RustlsConfig, Handle};
+use futures::{FutureExt, StreamExt};
+use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook_tokio::Signals;
 
 #[derive(Copy, Clone, serde::Deserialize)]

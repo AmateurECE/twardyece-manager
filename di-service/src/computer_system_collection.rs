@@ -16,16 +16,27 @@
 
 use core::future::Future;
 
-use axum::{Router, routing::MethodRouter, http::{StatusCode, Request}, Json, body::Body, extract::{FromRequest, FromRequestParts}, response::IntoResponse};
+use axum::{
+    body::Body,
+    extract::{FromRequest, FromRequestParts},
+    http::{Request, StatusCode},
+    response::IntoResponse,
+    routing::MethodRouter,
+    Json, Router,
+};
 use redfish_codegen::{models::redfish, registries::base::v1_15_0::Base};
 use seuss::redfish_error;
 use tracing::{event, Level};
 
 pub fn redfish_map_err<E>(error: E) -> (StatusCode, Json<redfish::Error>)
-where E: std::fmt::Display,
+where
+    E: std::fmt::Display,
 {
     event!(Level::ERROR, "{}", &error);
-    (StatusCode::BAD_REQUEST, Json(redfish_error::one_message(Base::InternalError.into())))
+    (
+        StatusCode::BAD_REQUEST,
+        Json(redfish_error::one_message(Base::InternalError.into())),
+    )
 }
 
 #[derive(Default)]
@@ -33,11 +44,12 @@ pub struct ComputerSystem(MethodRouter);
 
 impl ComputerSystem {
     pub fn replace<Fn, Fut, P, B, R>(self, handler: Fn) -> Self
-    where Fn: FnOnce(P, B) -> Fut + Clone + Send + 'static,
-    Fut: Future<Output = R> + Send,
-    P: FromRequestParts<()> + Send,
-    B: FromRequest<(), Body> + Send,
-    R: IntoResponse,
+    where
+        Fn: FnOnce(P, B) -> Fut + Clone + Send + 'static,
+        Fut: Future<Output = R> + Send,
+        P: FromRequestParts<()> + Send,
+        B: FromRequest<(), Body> + Send,
+        R: IntoResponse,
     {
         Self(self.0.put(|request: Request<Body>| async move {
             let handler = handler.clone();
@@ -58,8 +70,7 @@ impl ComputerSystem {
 
 impl Into<Router> for ComputerSystem {
     fn into(self) -> Router {
-        Router::new()
-            .route("/", self.0)
+        Router::new().route("/", self.0)
     }
 }
 
@@ -71,11 +82,15 @@ pub struct ComputerSystemCollection {
 
 impl ComputerSystemCollection {
     pub fn read<Fn, Fut, R>(self, handler: Fn) -> Self
-    where Fn: FnOnce() -> Fut + Clone + Send + 'static,
-    Fut: Future<Output = R> + Send,
-    R: IntoResponse,
+    where
+        Fn: FnOnce() -> Fut + Clone + Send + 'static,
+        Fut: Future<Output = R> + Send,
+        R: IntoResponse,
     {
-        let Self { collection, systems } = self;
+        let Self {
+            collection,
+            systems,
+        } = self;
         Self {
             collection: collection.get(|| async move {
                 let handler = handler.clone();
@@ -86,12 +101,16 @@ impl ComputerSystemCollection {
     }
 
     pub fn create<Fn, Fut, B, R>(self, handler: Fn) -> Self
-    where Fn: FnOnce(B) -> Fut + Clone + Send + 'static,
-    Fut: Future<Output = R> + Send,
-    B: FromRequest<(), Body> + Send,
-    R: IntoResponse,
+    where
+        Fn: FnOnce(B) -> Fut + Clone + Send + 'static,
+        Fut: Future<Output = R> + Send,
+        B: FromRequest<(), Body> + Send,
+        R: IntoResponse,
     {
-        let Self { collection, systems } = self;
+        let Self {
+            collection,
+            systems,
+        } = self;
         Self {
             collection: collection.post(|request: Request<Body>| async move {
                 let handler = handler.clone();
@@ -116,9 +135,15 @@ impl ComputerSystemCollection {
 impl Into<Router> for ComputerSystemCollection {
     fn into(self) -> Router {
         Router::new()
-            .route("/", self.collection.fallback(|| async {
-                (StatusCode::METHOD_NOT_ALLOWED, Json(redfish_error::one_message(Base::OperationNotAllowed.into())))
-            }))
+            .route(
+                "/",
+                self.collection.fallback(|| async {
+                    (
+                        StatusCode::METHOD_NOT_ALLOWED,
+                        Json(redfish_error::one_message(Base::OperationNotAllowed.into())),
+                    )
+                }),
+            )
             .nest("/:computer_system", self.systems.into())
     }
 }

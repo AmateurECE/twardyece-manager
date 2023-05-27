@@ -14,12 +14,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use axum::{
-    response::Redirect,
-    Router,
-};
+use axum::{response::Redirect, Router};
 use clap::Parser;
-use redfish_codegen::models::{resource, odata_v4};
+use redfish_codegen::models::{odata_v4, resource};
 use seuss::{
     auth::{pam::LinuxPamAuthenticator, CombinedAuthenticationProxy, Role},
     routing,

@@ -16,14 +16,17 @@
 
 use std::{collections::HashMap, fs::File};
 
-use axum::{Router, Json, http::StatusCode, extract::Path};
+use axum::{extract::Path, http::StatusCode, Json, Router};
 use clap::Parser;
+use redfish_codegen::models::{
+    computer_system::v1_20_0::ComputerSystem as System,
+    computer_system_collection::ComputerSystemCollection as Model, redfish,
+};
 use seuss::auth::Role;
-use redfish_codegen::models::{computer_system_collection::ComputerSystemCollection as Model, computer_system::v1_20_0::ComputerSystem as System, redfish};
 
 mod computer_system_collection;
 
-use computer_system_collection::{ComputerSystemCollection, ComputerSystem};
+use computer_system_collection::{ComputerSystem, ComputerSystemCollection};
 use tower_http::trace::TraceLayer;
 use tracing::{event, Level};
 
@@ -50,24 +53,35 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let config: Configuration = serde_yaml::from_reader(File::open(&args.config)?)?;
     let app = Router::new()
-        .nest("/redfish/v1/Systems", ComputerSystemCollection::default()
-            .read(|| async {
-                let model = Model::default();
-                Json(model)
-            })
-            .create(|Json(model): Json<Model>| async {
-                event!(Level::INFO, "{}", &serde_json::to_string(&model).map_err(redfish_map_err)?);
-                Ok::<_, (StatusCode, Json<redfish::Error>)>(Json(model))
-            })
-            .systems(
-                ComputerSystem::default().replace(|Path(computer_system): Path<u32>, Json(system): Json<System>| async move {
-                    event!(Level::INFO, "{}: {}", computer_system, &serde_json::to_string(&system).map_err(redfish_map_err)?);
-                    Ok::<_, (StatusCode, Json<redfish::Error>)>(Json(system))
+        .nest(
+            "/redfish/v1/Systems",
+            ComputerSystemCollection::default()
+                .read(|| async {
+                    let model = Model::default();
+                    Json(model)
                 })
-            )
-            .into()
+                .create(|Json(model): Json<Model>| async {
+                    event!(
+                        Level::INFO,
+                        "{}",
+                        &serde_json::to_string(&model).map_err(redfish_map_err)?
+                    );
+                    Ok::<_, (StatusCode, Json<redfish::Error>)>(Json(model))
+                })
+                .systems(ComputerSystem::default().replace(
+                    |Path(computer_system): Path<u32>, Json(system): Json<System>| async move {
+                        event!(
+                            Level::INFO,
+                            "{}: {}",
+                            computer_system,
+                            &serde_json::to_string(&system).map_err(redfish_map_err)?
+                        );
+                        Ok::<_, (StatusCode, Json<redfish::Error>)>(Json(system))
+                    },
+                ))
+                .into(),
         )
         .layer(TraceLayer::new_for_http());
-    
+
     redfish_service::serve(config.server, app).await
 }
