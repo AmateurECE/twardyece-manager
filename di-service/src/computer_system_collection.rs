@@ -16,7 +16,7 @@
 
 use core::future::Future;
 
-use axum::{Router, routing::MethodRouter, http::{StatusCode, Request}, Json, body::Body, extract::FromRequest, response::IntoResponse};
+use axum::{Router, routing::MethodRouter, http::{StatusCode, Request}, Json, body::Body, extract::{FromRequest, FromRequestParts}, response::IntoResponse};
 use redfish_codegen::{models::redfish, registries::base::v1_15_0::Base};
 use seuss::redfish_error;
 use tracing::{event, Level};
@@ -30,6 +30,31 @@ where E: std::fmt::Display,
 
 #[derive(Default)]
 pub struct ComputerSystem(MethodRouter);
+
+impl ComputerSystem {
+    pub fn replace<Fn, Fut, P, B, R>(self, handler: Fn) -> Self
+    where Fn: FnOnce(P, B) -> Fut + Clone + Send + 'static,
+    Fut: Future<Output = R> + Send,
+    P: FromRequestParts<()> + Send,
+    B: FromRequest<(), Body> + Send,
+    R: IntoResponse,
+    {
+        Self(self.0.put(|request: Request<Body>| async move {
+            let handler = handler.clone();
+            let (mut parts, body) = request.into_parts();
+            let param = match P::from_request_parts(&mut parts, &()).await {
+                Ok(value) => value,
+                Err(rejection) => return rejection.into_response(),
+            };
+            let request = Request::from_parts(parts, body);
+            let body = match B::from_request(request, &()).await {
+                Ok(value) => value,
+                Err(rejection) => return rejection.into_response(),
+            };
+            handler(param, body).await.into_response()
+        }))
+    }
+}
 
 impl Into<Router> for ComputerSystem {
     fn into(self) -> Router {
@@ -48,7 +73,7 @@ impl ComputerSystemCollection {
     pub fn read<Fn, Fut, R>(self, handler: Fn) -> Self
     where Fn: FnOnce() -> Fut + Clone + Send + 'static,
     Fut: Future<Output = R> + Send,
-    R: IntoResponse + Send,
+    R: IntoResponse,
     {
         let Self { collection, systems } = self;
         Self {
@@ -64,7 +89,7 @@ impl ComputerSystemCollection {
     where Fn: FnOnce(B) -> Fut + Clone + Send + 'static,
     Fut: Future<Output = R> + Send,
     B: FromRequest<(), Body> + Send,
-    R: IntoResponse + Send,
+    R: IntoResponse,
     {
         let Self { collection, systems } = self;
         Self {

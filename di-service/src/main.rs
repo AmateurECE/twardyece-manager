@@ -16,10 +16,10 @@
 
 use std::{collections::HashMap, fs::File};
 
-use axum::{Router, Json, http::StatusCode};
+use axum::{Router, Json, http::StatusCode, extract::Path};
 use clap::Parser;
 use seuss::auth::Role;
-use redfish_codegen::models::{computer_system_collection::ComputerSystemCollection as Model, redfish};
+use redfish_codegen::models::{computer_system_collection::ComputerSystemCollection as Model, computer_system::v1_20_0::ComputerSystem as System, redfish};
 
 mod computer_system_collection;
 
@@ -59,7 +59,12 @@ async fn main() -> anyhow::Result<()> {
                 event!(Level::INFO, "{}", &serde_json::to_string(&model).map_err(redfish_map_err)?);
                 Ok::<_, (StatusCode, Json<redfish::Error>)>(Json(model))
             })
-            .systems(ComputerSystem::default())
+            .systems(
+                ComputerSystem::default().replace(|Path(computer_system): Path<u32>, Json(system): Json<System>| async move {
+                    event!(Level::INFO, "{}: {}", computer_system, &serde_json::to_string(&system).map_err(redfish_map_err)?);
+                    Ok::<_, (StatusCode, Json<redfish::Error>)>(Json(system))
+                })
+            )
             .into()
         )
         .layer(TraceLayer::new_for_http());
