@@ -29,7 +29,20 @@ where E: std::fmt::Display,
 }
 
 #[derive(Default)]
-pub struct ComputerSystemCollection(MethodRouter);
+pub struct ComputerSystem(MethodRouter);
+
+impl Into<Router> for ComputerSystem {
+    fn into(self) -> Router {
+        Router::new()
+            .route("/", self.0)
+    }
+}
+
+#[derive(Default)]
+pub struct ComputerSystemCollection {
+    collection: MethodRouter,
+    systems: ComputerSystem,
+}
 
 impl ComputerSystemCollection {
     pub fn read<Fn, Fut, R>(self, handler: Fn) -> Self
@@ -37,10 +50,14 @@ impl ComputerSystemCollection {
     Fut: Future<Output = R> + Send,
     R: IntoResponse + Send,
     {
-        Self(self.0.get(|| async move {
-            let handler = handler.clone();
-            handler().await
-        }))
+        let Self { collection, systems } = self;
+        Self {
+            collection: collection.get(|| async move {
+                let handler = handler.clone();
+                handler().await
+            }),
+            systems,
+        }
     }
 
     pub fn create<Fn, Fut, B, R>(self, handler: Fn) -> Self
@@ -49,22 +66,34 @@ impl ComputerSystemCollection {
     B: FromRequest<(), Body> + Send,
     R: IntoResponse + Send,
     {
-        Self(self.0.post(|request: Request<Body>| async move {
-            let handler = handler.clone();
-            let body = match B::from_request(request, &()).await {
-                Ok(value) => value,
-                Err(rejection) => return rejection.into_response(),
-            };
-            handler(body).await.into_response()
-        }))
+        let Self { collection, systems } = self;
+        Self {
+            collection: collection.post(|request: Request<Body>| async move {
+                let handler = handler.clone();
+                let body = match B::from_request(request, &()).await {
+                    Ok(value) => value,
+                    Err(rejection) => return rejection.into_response(),
+                };
+                handler(body).await.into_response()
+            }),
+            systems,
+        }
+    }
+
+    pub fn systems(self, systems: ComputerSystem) -> Self {
+        Self {
+            collection: self.collection,
+            systems,
+        }
     }
 }
 
 impl Into<Router> for ComputerSystemCollection {
     fn into(self) -> Router {
         Router::new()
-            .route("/", self.0.fallback(|| async {
+            .route("/", self.collection.fallback(|| async {
                 (StatusCode::METHOD_NOT_ALLOWED, Json(redfish_error::one_message(Base::OperationNotAllowed.into())))
             }))
+            .nest("/:computer_system", self.systems.into())
     }
 }

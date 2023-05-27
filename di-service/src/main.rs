@@ -23,7 +23,7 @@ use redfish_codegen::models::{computer_system_collection::ComputerSystemCollecti
 
 mod computer_system_collection;
 
-use computer_system_collection::ComputerSystemCollection;
+use computer_system_collection::{ComputerSystemCollection, ComputerSystem};
 use tower_http::trace::TraceLayer;
 use tracing::{event, Level};
 
@@ -59,6 +59,7 @@ async fn main() -> anyhow::Result<()> {
                 event!(Level::INFO, "{}", &serde_json::to_string(&model).map_err(redfish_map_err)?);
                 Ok::<_, (StatusCode, Json<redfish::Error>)>(Json(model))
             })
+            .systems(ComputerSystem::default())
             .into()
         )
         .layer(TraceLayer::new_for_http());
