@@ -14,9 +14,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, fs::File};
+use std::{
+    collections::HashMap, fs::File, future::Future, num::ParseIntError, pin::Pin, task::Poll,
+};
 
-use axum::{extract::Path, http::StatusCode, Json, Router};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    Json, Router,
+};
 use clap::Parser;
 use redfish_codegen::models::{
     computer_system::v1_20_0::ComputerSystem as System,
@@ -27,6 +33,7 @@ use seuss::auth::Role;
 mod computer_system_collection;
 
 use computer_system_collection::{ComputerSystem, ComputerSystemCollection};
+use tower::Service;
 use tower_http::trace::TraceLayer;
 use tracing::{event, Level};
 
@@ -47,41 +54,67 @@ struct Configuration {
     server: redfish_service::Configuration,
 }
 
+#[derive(Clone, Default)]
+struct ResourceLocator;
+impl Service<Path<HashMap<String, String>>> for ResourceLocator {
+    type Response = u32;
+    type Error = ParseIntError;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
+
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, parameters: Path<HashMap<String, String>>) -> Self::Future {
+        let id = parameters.get("computer_system").unwrap().clone();
+        let result = u32::from_str_radix(id.as_str(), 10);
+        let future = async { result };
+        Box::pin(future)
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     let args = Args::parse();
     let config: Configuration = serde_yaml::from_reader(File::open(&args.config)?)?;
-    let app = Router::new()
-        .nest(
-            "/redfish/v1/Systems",
-            ComputerSystemCollection::default()
-                .read(|| async {
-                    let model = Model::default();
-                    Json(model)
-                })
-                .create(|Json(model): Json<Model>| async {
-                    event!(
-                        Level::INFO,
-                        "{}",
-                        &serde_json::to_string(&model).map_err(redfish_map_err)?
-                    );
-                    Ok::<_, (StatusCode, Json<redfish::Error>)>(Json(model))
-                })
-                .systems(ComputerSystem::default().replace(
-                    |Path(computer_system): Path<u32>, Json(system): Json<System>| async move {
+    let app =
+        Router::new()
+            .nest(
+                "/redfish/v1/Systems",
+                ComputerSystemCollection::default()
+                    .read(|| async {
+                        let model = Model::default();
+                        Json(model)
+                    })
+                    .create(|Json(model): Json<Model>| async {
                         event!(
                             Level::INFO,
-                            "{}: {}",
-                            computer_system,
-                            &serde_json::to_string(&system).map_err(redfish_map_err)?
+                            "{}",
+                            &serde_json::to_string(&model).map_err(redfish_map_err)?
                         );
-                        Ok::<_, (StatusCode, Json<redfish::Error>)>(Json(system))
-                    },
-                ))
-                .into(),
-        )
-        .layer(TraceLayer::new_for_http());
+                        Ok::<_, (StatusCode, Json<redfish::Error>)>(Json(model))
+                    })
+                    .systems(
+                        ComputerSystem::default().replace(
+                            |State(_locator): State<ResourceLocator>,
+                             Json(system): Json<System>| async move {
+                                event!(
+                                    Level::INFO,
+                                    "{}",
+                                    &serde_json::to_string(&system).map_err(redfish_map_err)?
+                                );
+                                Ok::<_, (StatusCode, Json<redfish::Error>)>(Json(system))
+                            },
+                        ),
+                        ResourceLocator,
+                    )
+                    .into(),
+            )
+            .layer(TraceLayer::new_for_http());
 
     redfish_service::serve(config.server, app).await
 }

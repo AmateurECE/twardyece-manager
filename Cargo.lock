@@ -348,6 +348,7 @@ dependencies = [
  "serde_yaml",
  "seuss",
  "tokio",
+ "tower",
  "tower-http",
  "tracing",
  "tracing-subscriber",

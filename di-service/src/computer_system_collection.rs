@@ -18,7 +18,7 @@ use core::future::Future;
 
 use axum::{
     body::Body,
-    extract::{FromRequest, FromRequestParts},
+    extract::{FromRequest, FromRequestParts, State},
     http::{Request, StatusCode},
     response::IntoResponse,
     routing::MethodRouter,
@@ -40,36 +40,49 @@ where
 }
 
 #[derive(Default)]
-pub struct ComputerSystem(MethodRouter);
+pub struct ComputerSystem<S>(MethodRouter<S>)
+where
+    S: Send + Sync + Clone + 'static;
 
-impl ComputerSystem {
-    pub fn replace<Fn, Fut, P, B, R>(self, handler: Fn) -> Self
+impl<S> ComputerSystem<S>
+where
+    S: Send + Sync + Clone,
+{
+    pub fn replace<Fn, Fut, B, R>(self, handler: Fn) -> Self
     where
-        Fn: FnOnce(P, B) -> Fut + Clone + Send + 'static,
+        Fn: FnOnce(State<S>, B) -> Fut + Clone + Send + 'static,
         Fut: Future<Output = R> + Send,
-        P: FromRequestParts<()> + Send,
-        B: FromRequest<(), Body> + Send,
+        B: FromRequest<S, Body> + Send,
         R: IntoResponse,
     {
-        Self(self.0.put(|request: Request<Body>| async move {
-            let handler = handler.clone();
-            let (mut parts, body) = request.into_parts();
-            let param = match P::from_request_parts(&mut parts, &()).await {
-                Ok(value) => value,
-                Err(rejection) => return rejection.into_response(),
-            };
-            let request = Request::from_parts(parts, body);
-            let body = match B::from_request(request, &()).await {
-                Ok(value) => value,
-                Err(rejection) => return rejection.into_response(),
-            };
-            handler(param, body).await.into_response()
-        }))
+        Self(self.0.put(
+            |State(state): State<S>, request: Request<Body>| async move {
+                let handler = handler.clone();
+                let (mut parts, body) = request.into_parts();
+                let state: State<S> = match State::from_request_parts(&mut parts, &state).await {
+                    Ok(value) => value,
+                    Err(rejection) => return rejection.into_response(),
+                };
+                let request = Request::from_parts(parts, body);
+                let body = match B::from_request(request, &state).await {
+                    Ok(value) => value,
+                    Err(rejection) => return rejection.into_response(),
+                };
+                handler(state, body).await.into_response()
+            },
+        ))
+    }
+
+    pub fn with_state(self, locator: S) -> ComputerSystem<()> {
+        ComputerSystem::<()>(self.0.with_state(locator))
     }
 }
 
-impl Into<Router> for ComputerSystem {
-    fn into(self) -> Router {
+impl<S> Into<Router<S>> for ComputerSystem<S>
+where
+    S: Send + Sync + Clone,
+{
+    fn into(self) -> Router<S> {
         Router::new().route("/", self.0)
     }
 }
@@ -77,7 +90,7 @@ impl Into<Router> for ComputerSystem {
 #[derive(Default)]
 pub struct ComputerSystemCollection {
     collection: MethodRouter,
-    systems: ComputerSystem,
+    systems: ComputerSystem<()>,
 }
 
 impl ComputerSystemCollection {
@@ -124,10 +137,13 @@ impl ComputerSystemCollection {
         }
     }
 
-    pub fn systems(self, systems: ComputerSystem) -> Self {
+    pub fn systems<S>(self, systems: ComputerSystem<S>, locator: S) -> Self
+    where
+        S: Send + Sync + Clone,
+    {
         Self {
             collection: self.collection,
-            systems,
+            systems: systems.with_state(locator),
         }
     }
 }
