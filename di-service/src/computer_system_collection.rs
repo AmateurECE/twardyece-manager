@@ -15,10 +15,11 @@
 // limitations under the License.
 
 use core::future::Future;
+use std::collections::HashMap;
 
 use axum::{
     body::Body,
-    extract::{FromRequest, FromRequestParts, State},
+    extract::{FromRequest, FromRequestParts, Path, State},
     http::{Request, StatusCode},
     response::IntoResponse,
     routing::MethodRouter,
@@ -26,6 +27,7 @@ use axum::{
 };
 use redfish_codegen::{models::redfish, registries::base::v1_15_0::Base};
 use seuss::redfish_error;
+use tower::Service;
 use tracing::{event, Level};
 
 pub fn redfish_map_err<E>(error: E) -> (StatusCode, Json<redfish::Error>)
@@ -39,18 +41,47 @@ where
     )
 }
 
-#[derive(Default)]
-pub struct ComputerSystem<S>(MethodRouter<S>)
+pub struct ComputerSystem<S, I, E, F>(MethodRouter<S>)
 where
-    S: Send + Sync + Clone + 'static;
+    S: Service<HashMap<String, String>, Response = I, Error = E, Future = F>
+        + Send
+        + Sync
+        + Clone
+        + 'static,
+    I: Send + Sync + Clone + 'static,
+    E: IntoResponse + Send + Sync + Clone,
+    F: Future<Output = Result<I, E>> + Send;
 
-impl<S> ComputerSystem<S>
+impl<S, I, E, F> Default for ComputerSystem<S, I, E, F>
 where
-    S: Send + Sync + Clone,
+    S: Service<HashMap<String, String>, Response = I, Error = E, Future = F>
+        + Send
+        + Sync
+        + Clone
+        + 'static,
+    I: Send + Sync + Clone + 'static,
+    E: IntoResponse + Send + Sync + Clone,
+    F: Future<Output = Result<I, E>> + Send,
+{
+    fn default() -> Self {
+        Self(MethodRouter::<S>::default())
+    }
+}
+
+impl<S, I, E, F> ComputerSystem<S, I, E, F>
+where
+    S: Service<HashMap<String, String>, Response = I, Error = E, Future = F>
+        + Send
+        + Sync
+        + Clone
+        + 'static,
+    I: Send + Sync + Clone,
+    E: IntoResponse + Send + Sync + Clone,
+    F: Future<Output = Result<I, E>> + Send,
 {
     pub fn replace<Fn, Fut, B, R>(self, handler: Fn) -> Self
     where
-        Fn: FnOnce(State<S>, B) -> Fut + Clone + Send + 'static,
+        Fn: FnOnce(I, B) -> Fut + Clone + Send + 'static,
         Fut: Future<Output = R> + Send,
         B: FromRequest<S, Body> + Send,
         R: IntoResponse,
@@ -59,41 +90,98 @@ where
             |State(state): State<S>, request: Request<Body>| async move {
                 let handler = handler.clone();
                 let (mut parts, body) = request.into_parts();
-                let state: State<S> = match State::from_request_parts(&mut parts, &state).await {
+                let mut state: State<S> = match State::from_request_parts(&mut parts, &state).await
+                {
                     Ok(value) => value,
                     Err(rejection) => return rejection.into_response(),
                 };
+
+                let Path(parameters) =
+                    match Path::<HashMap<String, String>>::from_request_parts(&mut parts, &state)
+                        .await
+                    {
+                        Ok(value) => value,
+                        Err(rejection) => return rejection.into_response(),
+                    };
+                let item = match state.call(parameters).await {
+                    Ok(value) => value,
+                    Err(rejection) => return rejection.into_response(),
+                };
+
                 let request = Request::from_parts(parts, body);
                 let body = match B::from_request(request, &state).await {
                     Ok(value) => value,
                     Err(rejection) => return rejection.into_response(),
                 };
-                handler(state, body).await.into_response()
+                handler(item, body).await.into_response()
             },
         ))
     }
-
-    pub fn with_state(self, locator: S) -> ComputerSystem<()> {
-        ComputerSystem::<()>(self.0.with_state(locator))
-    }
 }
 
-impl<S> Into<Router<S>> for ComputerSystem<S>
+impl<S, I, E, F> Into<Router<S>> for ComputerSystem<S, I, E, F>
 where
-    S: Send + Sync + Clone,
+    S: Service<HashMap<String, String>, Response = I, Error = E, Future = F>
+        + Send
+        + Sync
+        + Clone
+        + 'static,
+    I: Send + Sync + Clone,
+    E: IntoResponse + Send + Sync + Clone,
+    F: Future<Output = Result<I, E>> + Send,
 {
     fn into(self) -> Router<S> {
         Router::new().route("/", self.0)
     }
 }
 
-#[derive(Default)]
-pub struct ComputerSystemCollection {
+pub struct ComputerSystemCollection<S, I, E, F>
+where
+    S: Service<HashMap<String, String>, Response = I, Error = E, Future = F>
+        + Send
+        + Sync
+        + Clone
+        + 'static,
+    I: Send + Sync + Clone + 'static,
+    E: IntoResponse + Send + Sync + Clone,
+    F: Future<Output = Result<I, E>> + Send,
+{
     collection: MethodRouter,
-    systems: ComputerSystem<()>,
+    systems: Option<ComputerSystem<S, I, E, F>>,
+    locator: Option<S>,
 }
 
-impl ComputerSystemCollection {
+impl<S, I, E, F> Default for ComputerSystemCollection<S, I, E, F>
+where
+    S: Service<HashMap<String, String>, Response = I, Error = E, Future = F>
+        + Send
+        + Sync
+        + Clone
+        + 'static,
+    I: Send + Sync + Clone + 'static,
+    E: IntoResponse + Send + Sync + Clone,
+    F: Future<Output = Result<I, E>> + Send,
+{
+    fn default() -> Self {
+        Self {
+            collection: MethodRouter::default(),
+            systems: None,
+            locator: None,
+        }
+    }
+}
+
+impl<S, I, E, F> ComputerSystemCollection<S, I, E, F>
+where
+    S: Service<HashMap<String, String>, Response = I, Error = E, Future = F>
+        + Send
+        + Sync
+        + Clone
+        + 'static,
+    I: Send + Sync + Clone,
+    E: IntoResponse + Send + Sync + Clone,
+    F: Future<Output = Result<I, E>> + Send,
+{
     pub fn read<Fn, Fut, R>(self, handler: Fn) -> Self
     where
         Fn: FnOnce() -> Fut + Clone + Send + 'static,
@@ -103,6 +191,7 @@ impl ComputerSystemCollection {
         let Self {
             collection,
             systems,
+            locator,
         } = self;
         Self {
             collection: collection.get(|| async move {
@@ -110,6 +199,7 @@ impl ComputerSystemCollection {
                 handler().await
             }),
             systems,
+            locator,
         }
     }
 
@@ -123,6 +213,7 @@ impl ComputerSystemCollection {
         let Self {
             collection,
             systems,
+            locator,
         } = self;
         Self {
             collection: collection.post(|request: Request<Body>| async move {
@@ -134,32 +225,47 @@ impl ComputerSystemCollection {
                 handler(body).await.into_response()
             }),
             systems,
+            locator,
         }
     }
 
-    pub fn systems<S>(self, systems: ComputerSystem<S>, locator: S) -> Self
-    where
-        S: Send + Sync + Clone,
-    {
+    pub fn systems(self, systems: ComputerSystem<S, I, E, F>, locator: S) -> Self {
         Self {
             collection: self.collection,
-            systems: systems.with_state(locator),
+            systems: Some(systems),
+            locator: Some(locator),
         }
     }
 }
 
-impl Into<Router> for ComputerSystemCollection {
+impl<S, I, E, F> Into<Router> for ComputerSystemCollection<S, I, E, F>
+where
+    S: Service<HashMap<String, String>, Response = I, Error = E, Future = F>
+        + Send
+        + Sync
+        + Clone
+        + 'static,
+    I: Send + Sync + Clone,
+    E: IntoResponse + Send + Sync + Clone,
+    F: Future<Output = Result<I, E>> + Send,
+{
     fn into(self) -> Router {
+        let Self {
+            collection,
+            systems,
+            locator,
+        } = self;
+        let systems: Router<S> = systems.unwrap().into();
         Router::new()
             .route(
                 "/",
-                self.collection.fallback(|| async {
+                collection.fallback(|| async {
                     (
                         StatusCode::METHOD_NOT_ALLOWED,
                         Json(redfish_error::one_message(Base::OperationNotAllowed.into())),
                     )
                 }),
             )
-            .nest("/:computer_system", self.systems.into())
+            .nest("/:computer_system", systems.with_state(locator.unwrap()))
     }
 }
