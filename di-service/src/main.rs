@@ -14,7 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, fs::File, future::Future, pin::Pin, task::Poll};
+use std::{collections::HashMap, fs::File};
 
 use axum::{http::StatusCode, Json, Router};
 use clap::Parser;
@@ -27,7 +27,7 @@ use seuss::auth::Role;
 mod computer_system_collection;
 
 use computer_system_collection::{ComputerSystem, ComputerSystemCollection};
-use tower::Service;
+use tower::service_fn;
 use tower_http::trace::TraceLayer;
 use tracing::{event, Level};
 
@@ -46,28 +46,6 @@ struct Configuration {
     #[serde(rename = "role-map")]
     role_map: HashMap<Role, String>,
     server: redfish_service::Configuration,
-}
-
-#[derive(Clone, Default)]
-struct ResourceLocator;
-impl Service<HashMap<String, String>> for ResourceLocator {
-    type Response = u32;
-    type Error = (StatusCode, Json<redfish::Error>);
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + Sync>>;
-
-    fn poll_ready(
-        &mut self,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, parameters: HashMap<String, String>) -> Self::Future {
-        let id = parameters.get("computer_system").unwrap().clone();
-        let result = u32::from_str_radix(id.as_str(), 10).map_err(redfish_map_err);
-        let future = async { result };
-        Box::pin(future)
-    }
 }
 
 #[tokio::main]
@@ -103,7 +81,10 @@ async fn main() -> anyhow::Result<()> {
                             Ok::<_, (StatusCode, Json<redfish::Error>)>(Json(system))
                         },
                     ),
-                    ResourceLocator,
+                    service_fn(|parameters: HashMap<String, String>| async move {
+                        let id = parameters.get("computer_system").unwrap().clone();
+                        u32::from_str_radix(id.as_str(), 10).map_err(redfish_map_err)
+                    }),
                 )
                 .into(),
         )
