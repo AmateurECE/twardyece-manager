@@ -15,19 +15,17 @@
 // limitations under the License.
 
 use core::future::Future;
-use std::convert::Infallible;
 
 use axum::{
     body::Body,
     extract::{FromRequest, FromRequestParts},
     http::{Request, StatusCode},
     response::IntoResponse,
-    routing::{MethodRouter, Route},
+    routing::MethodRouter,
     Json, Router,
 };
 use redfish_codegen::{models::redfish, registries::base::v1_15_0::Base};
 use seuss::redfish_error;
-use tower::{Layer, Service};
 use tracing::{event, Level};
 
 pub fn redfish_map_err<E>(error: E) -> (StatusCode, Json<redfish::Error>)
@@ -45,13 +43,13 @@ where
 pub struct ComputerSystem(MethodRouter);
 
 impl ComputerSystem {
-    pub fn replace<Fn, Fut, P, B, R>(self, handler: Fn) -> Self
+    pub fn replace<Fn, Fut, P, B, Res>(self, handler: Fn) -> Self
     where
         Fn: FnOnce(P, B) -> Fut + Clone + Send + 'static,
-        Fut: Future<Output = R> + Send,
+        Fut: Future<Output = Res> + Send,
         P: FromRequestParts<()> + Send,
         B: FromRequest<(), Body> + Send,
-        R: IntoResponse,
+        Res: IntoResponse,
     {
         Self(self.0.put(|request: Request<Body>| async move {
             let handler = handler.clone();
@@ -68,58 +66,19 @@ impl ComputerSystem {
             handler(param, body).await.into_response()
         }))
     }
-}
 
-impl Into<Router> for ComputerSystem {
-    fn into(self) -> Router {
+    pub fn into_router(self) -> Router {
         Router::new().route("/", self.0)
     }
 }
 
-pub struct ComputerSystemCollection<L, S, R, F>
-where
-    L: Layer<Route, Service = S> + Send + Clone + 'static,
-    S: Service<Request<Body>, Response = R, Future = F, Error = Infallible>
-        + Send
-        + Clone
-        + 'static,
-    R: IntoResponse + 'static,
-    F: Send + 'static,
-{
+#[derive(Default)]
+pub struct ComputerSystemCollection {
     collection: MethodRouter,
-    systems: Option<ComputerSystem>,
-    locator: Option<L>,
+    systems: Option<Router>,
 }
 
-impl<L, S, R, F> Default for ComputerSystemCollection<L, S, R, F>
-where
-    L: Layer<Route, Service = S> + Send + Clone + 'static,
-    S: Service<Request<Body>, Response = R, Future = F, Error = Infallible>
-        + Send
-        + Clone
-        + 'static,
-    R: IntoResponse + 'static,
-    F: Send + 'static,
-{
-    fn default() -> Self {
-        Self {
-            collection: MethodRouter::default(),
-            systems: None,
-            locator: None,
-        }
-    }
-}
-
-impl<L, S, R, F> ComputerSystemCollection<L, S, R, F>
-where
-    L: Layer<Route, Service = S> + Send + Clone + 'static,
-    S: Service<Request<Body>, Response = R, Future = F, Error = Infallible>
-        + Send
-        + Clone
-        + 'static,
-    R: IntoResponse + 'static,
-    F: Send + 'static,
-{
+impl ComputerSystemCollection {
     pub fn read<Fn, Fut, Res>(self, handler: Fn) -> Self
     where
         Fn: FnOnce() -> Fut + Clone + Send + 'static,
@@ -129,7 +88,6 @@ where
         let Self {
             collection,
             systems,
-            locator,
         } = self;
         Self {
             collection: collection.get(|| async move {
@@ -137,7 +95,6 @@ where
                 handler().await
             }),
             systems,
-            locator,
         }
     }
 
@@ -151,7 +108,6 @@ where
         let Self {
             collection,
             systems,
-            locator,
         } = self;
         Self {
             collection: collection.post(|request: Request<Body>| async move {
@@ -163,37 +119,25 @@ where
                 handler(body).await.into_response()
             }),
             systems,
-            locator,
         }
     }
 
-    pub fn systems(self, systems: ComputerSystem, locator: L) -> Self {
+    pub fn systems(self, systems: Router) -> Self {
         Self {
             collection: self.collection,
             systems: Some(systems),
-            locator: Some(locator),
         }
     }
-}
 
-impl<L, S, R, F> Into<Router> for ComputerSystemCollection<L, S, R, F>
-where
-    L: Layer<Route, Service = S> + Send + Clone + 'static,
-    S: Service<Request<Body>, Response = R, Future = F, Error = Infallible>
-        + Send
-        + Clone
-        + 'static,
-    R: IntoResponse + 'static,
-    F: Send + 'static,
-{
-    fn into(self) -> Router {
+    pub fn into_router(self) -> Router {
         let Self {
             collection,
             systems,
-            locator,
         } = self;
-        let systems: Router = systems.unwrap().into();
-        Router::new()
+        systems
+            .map_or(Router::default(), |systems: Router| {
+                Router::new().nest("/:computer_system_id", systems)
+            })
             .route(
                 "/",
                 collection.fallback(|| async {
@@ -202,10 +146,6 @@ where
                         Json(redfish_error::one_message(Base::OperationNotAllowed.into())),
                     )
                 }),
-            )
-            .nest(
-                "/:computer_system_id",
-                systems.route_layer(locator.unwrap()),
             )
     }
 }

@@ -76,52 +76,62 @@ async fn main() -> anyhow::Result<()> {
                     Ok::<_, (StatusCode, Json<redfish::Error>)>(Json(model))
                 })
                 .systems(
-                    ComputerSystem::default().replace(
-                        |Extension(id): Extension<u32>, Json(system): Json<System>| async move {
-                            event!(
-                                Level::INFO,
-                                "id={}, body={}",
-                                id,
-                                &serde_json::to_string(&system).map_err(redfish_map_err)?
-                            );
-                            Ok::<_, (StatusCode, Json<redfish::Error>)>(Json(system))
-                        },
-                    ),
-                    middleware::from_fn(|request: Request<Body>, next: Next<Body>| async {
-                        let (mut parts, body) = request.into_parts();
-                        let parameters =
-                            Path::<HashMap<String, String>>::from_request_parts(&mut parts, &())
-                                .await
-                                .map_err(|rejection| rejection.into_response())
-                                .and_then(|parameters| {
-                                    parameters
-                                        .get("computer_system_id")
-                                        .ok_or(
-                                            (
-                                                StatusCode::BAD_REQUEST,
-                                                Json("Missing 'computer_system_id' parameter"),
+                    ComputerSystem::default()
+                        .replace(
+                            |Extension(id): Extension<u32>, Json(system): Json<System>| async move {
+                                event!(
+                                    Level::INFO,
+                                    "id={}, body={}",
+                                    id,
+                                    &serde_json::to_string(&system).map_err(redfish_map_err)?
+                                );
+                                Ok::<_, (StatusCode, Json<redfish::Error>)>(Json(system))
+                            },
+                        )
+                        .into_router()
+                        .route_layer(middleware::from_fn(
+                            |request: Request<Body>, next: Next<Body>| async {
+                                let (mut parts, body) = request.into_parts();
+                                let parameters =
+                                    Path::<HashMap<String, String>>::from_request_parts(
+                                        &mut parts,
+                                        &(),
+                                    )
+                                    .await
+                                    .map_err(|rejection| rejection.into_response())
+                                    .and_then(|parameters| {
+                                        parameters
+                                            .get("computer_system_id")
+                                            .ok_or(
+                                                (
+                                                    StatusCode::BAD_REQUEST,
+                                                    Json("Missing 'computer_system_id' parameter"),
+                                                )
+                                                    .into_response(),
                                             )
-                                                .into_response(),
-                                        )
-                                        .and_then(|id| {
-                                            u32::from_str_radix(id, 10).map_err(|error| {
-                                                (StatusCode::BAD_REQUEST, Json(error.to_string()))
-                                                    .into_response()
+                                            .and_then(|id| {
+                                                u32::from_str_radix(id, 10).map_err(|error| {
+                                                    (
+                                                        StatusCode::BAD_REQUEST,
+                                                        Json(error.to_string()),
+                                                    )
+                                                        .into_response()
+                                                })
                                             })
-                                        })
-                                });
-                        let id = match parameters {
-                            Ok(value) => value,
-                            Err(rejection) => return rejection,
-                        };
+                                    });
+                                let id = match parameters {
+                                    Ok(value) => value,
+                                    Err(rejection) => return rejection,
+                                };
 
-                        let mut request = Request::<Body>::from_parts(parts, body);
-                        request.extensions_mut().insert(id);
-                        let response = next.run(request).await;
-                        response
-                    }),
+                                let mut request = Request::<Body>::from_parts(parts, body);
+                                request.extensions_mut().insert(id);
+                                let response = next.run(request).await;
+                                response
+                            },
+                        )),
                 )
-                .into(),
+                .into_router(),
         )
         .layer(TraceLayer::new_for_http());
 
