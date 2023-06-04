@@ -63,11 +63,11 @@ async fn main() -> anyhow::Result<()> {
         .nest(
             "/redfish/v1/Systems",
             ComputerSystemCollection::default()
-                .read(|| async {
+                .get(|| async {
                     let model = Model::default();
                     Json(model)
                 })
-                .create(|Json(model): Json<Model>| async {
+                .post(|Json(model): Json<Model>| async {
                     event!(
                         Level::INFO,
                         "{}",
@@ -77,7 +77,7 @@ async fn main() -> anyhow::Result<()> {
                 })
                 .systems(
                     ComputerSystem::default()
-                        .replace(
+                        .put(
                             |Extension(id): Extension<u32>, Json(system): Json<System>| async move {
                                 event!(
                                     Level::INFO,

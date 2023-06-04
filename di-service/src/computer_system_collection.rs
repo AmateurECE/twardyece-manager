@@ -14,16 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use core::future::Future;
-
-use axum::{
-    body::Body,
-    extract::{FromRequest, FromRequestParts},
-    http::{Request, StatusCode},
-    response::IntoResponse,
-    routing::MethodRouter,
-    Json, Router,
-};
+use axum::{body::Body, handler::Handler, http::StatusCode, routing::MethodRouter, Json, Router};
 use redfish_codegen::{models::redfish, registries::base::v1_15_0::Base};
 use seuss::redfish_error;
 use tracing::{event, Level};
@@ -43,28 +34,12 @@ where
 pub struct ComputerSystem(MethodRouter);
 
 impl ComputerSystem {
-    pub fn replace<Fn, Fut, P, B, Res>(self, handler: Fn) -> Self
+    pub fn put<H, T>(self, handler: H) -> Self
     where
-        Fn: FnOnce(P, B) -> Fut + Clone + Send + 'static,
-        Fut: Future<Output = Res> + Send,
-        P: FromRequestParts<()> + Send,
-        B: FromRequest<(), Body> + Send,
-        Res: IntoResponse,
+        H: Handler<T, (), Body>,
+        T: 'static,
     {
-        Self(self.0.put(|request: Request<Body>| async move {
-            let handler = handler.clone();
-            let (mut parts, body) = request.into_parts();
-            let param = match P::from_request_parts(&mut parts, &()).await {
-                Ok(value) => value,
-                Err(rejection) => return rejection.into_response(),
-            };
-            let request = Request::from_parts(parts, body);
-            let body = match B::from_request(request, &()).await {
-                Ok(value) => value,
-                Err(rejection) => return rejection.into_response(),
-            };
-            handler(param, body).await.into_response()
-        }))
+        Self(self.0.put(handler))
     }
 
     pub fn into_router(self) -> Router {
@@ -79,45 +54,32 @@ pub struct ComputerSystemCollection {
 }
 
 impl ComputerSystemCollection {
-    pub fn read<Fn, Fut, Res>(self, handler: Fn) -> Self
+    pub fn get<H, T>(self, handler: H) -> Self
     where
-        Fn: FnOnce() -> Fut + Clone + Send + 'static,
-        Fut: Future<Output = Res> + Send,
-        Res: IntoResponse,
+        H: Handler<T, (), Body>,
+        T: 'static,
     {
         let Self {
             collection,
             systems,
         } = self;
         Self {
-            collection: collection.get(|| async move {
-                let handler = handler.clone();
-                handler().await
-            }),
+            collection: collection.get(handler),
             systems,
         }
     }
 
-    pub fn create<Fn, Fut, B, Res>(self, handler: Fn) -> Self
+    pub fn post<H, T>(self, handler: H) -> Self
     where
-        Fn: FnOnce(B) -> Fut + Clone + Send + 'static,
-        Fut: Future<Output = Res> + Send,
-        B: FromRequest<(), Body> + Send,
-        Res: IntoResponse,
+        H: Handler<T, (), Body>,
+        T: 'static,
     {
         let Self {
             collection,
             systems,
         } = self;
         Self {
-            collection: collection.post(|request: Request<Body>| async move {
-                let handler = handler.clone();
-                let body = match B::from_request(request, &()).await {
-                    Ok(value) => value,
-                    Err(rejection) => return rejection.into_response(),
-                };
-                handler(body).await.into_response()
-            }),
+            collection: collection.post(handler),
             systems,
         }
     }
