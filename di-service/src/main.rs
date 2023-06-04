@@ -16,7 +16,14 @@
 
 use std::{collections::HashMap, fs::File};
 
-use axum::{http::StatusCode, Json, Router};
+use axum::{
+    body::Body,
+    extract::{FromRequestParts, Path},
+    http::{Request, StatusCode},
+    middleware::{self, Next},
+    response::IntoResponse,
+    Extension, Json, Router,
+};
 use clap::Parser;
 use redfish_codegen::models::{
     computer_system::v1_20_0::ComputerSystem as System,
@@ -27,7 +34,6 @@ use seuss::auth::Role;
 mod computer_system_collection;
 
 use computer_system_collection::{ComputerSystem, ComputerSystemCollection};
-use tower::service_fn;
 use tower_http::trace::TraceLayer;
 use tracing::{event, Level};
 
@@ -71,7 +77,7 @@ async fn main() -> anyhow::Result<()> {
                 })
                 .systems(
                     ComputerSystem::default().replace(
-                        |id: u32, Json(system): Json<System>| async move {
+                        |Extension(id): Extension<u32>, Json(system): Json<System>| async move {
                             event!(
                                 Level::INFO,
                                 "id={}, body={}",
@@ -81,9 +87,38 @@ async fn main() -> anyhow::Result<()> {
                             Ok::<_, (StatusCode, Json<redfish::Error>)>(Json(system))
                         },
                     ),
-                    service_fn(|parameters: HashMap<String, String>| async move {
-                        let id = parameters.get("computer_system").unwrap().clone();
-                        u32::from_str_radix(id.as_str(), 10).map_err(redfish_map_err)
+                    middleware::from_fn(|request: Request<Body>, next: Next<Body>| async {
+                        let (mut parts, body) = request.into_parts();
+                        let parameters =
+                            Path::<HashMap<String, String>>::from_request_parts(&mut parts, &())
+                                .await
+                                .map_err(|rejection| rejection.into_response())
+                                .and_then(|parameters| {
+                                    parameters
+                                        .get("computer_system_id")
+                                        .ok_or(
+                                            (
+                                                StatusCode::BAD_REQUEST,
+                                                Json("Missing 'computer_system_id' parameter"),
+                                            )
+                                                .into_response(),
+                                        )
+                                        .and_then(|id| {
+                                            u32::from_str_radix(id, 10).map_err(|error| {
+                                                (StatusCode::BAD_REQUEST, Json(error.to_string()))
+                                                    .into_response()
+                                            })
+                                        })
+                                });
+                        let id = match parameters {
+                            Ok(value) => value,
+                            Err(rejection) => return rejection,
+                        };
+
+                        let mut request = Request::<Body>::from_parts(parts, body);
+                        request.extensions_mut().insert(id);
+                        let response = next.run(request).await;
+                        response
                     }),
                 )
                 .into(),
