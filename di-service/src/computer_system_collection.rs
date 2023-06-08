@@ -14,20 +14,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, convert::Infallible, future::Future, pin::Pin};
+use std::{
+    collections::HashMap, convert::Infallible, future::Future, marker::PhantomData, pin::Pin,
+    str::FromStr,
+};
 
 use axum::{
+    async_trait,
     body::Body,
     extract::{FromRequestParts, Path},
     handler::Handler,
-    http::{Request, StatusCode},
+    http::{request::Parts, Request, StatusCode},
     response::{IntoResponse, Response},
     routing::{MethodRouter, Route},
     Json, Router,
 };
 use redfish_codegen::registries::base::v1_15_0::Base;
 use seuss::redfish_error;
-use tower::Service;
 use tracing::{event, Level};
 
 pub fn redfish_map_err<E>(error: E) -> Response
@@ -35,95 +38,199 @@ where
     E: std::fmt::Display,
 {
     event!(Level::ERROR, "{}", &error);
+    redfish_map_err_no_log(error)
+}
+
+pub fn redfish_map_err_no_log<E>(_: E) -> Response {
     (
         StatusCode::BAD_REQUEST,
         Json(redfish_error::one_message(Base::InternalError.into())),
-    ).into_response()
+    )
+        .into_response()
 }
 
-pub struct ResourceLocator<H, F, R>
+async fn get_request_parameter<T>(
+    mut parts: &mut Parts,
+    parameter_name: &String,
+) -> Result<T, Response>
 where
-    H: Service<String, Response = R, Error = Response, Future = F> + Send + Sync + Clone + 'static,
-    F: Future<Output = Result<R, Response>> + Send + Sync,
-    R: Send + Sync + 'static,
+    T: FromStr,
 {
-    parameter: String,
-    handler: H,
+    Path::<HashMap<String, String>>::from_request_parts(&mut parts, &())
+        .await
+        .map_err(|rejection| rejection.into_response())
+        .and_then(|parameters| {
+            parameters
+                .get(parameter_name)
+                .ok_or(
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json("Missing '".to_string() + parameter_name + "' parameter"),
+                    )
+                        .into_response(),
+                )
+                .map(|parameter| parameter.clone())
+        })
+        .and_then(|value| T::from_str(&value).map_err(redfish_map_err_no_log))
 }
 
-impl<H, F, R> Clone for ResourceLocator<H, F, R>
+#[derive(Clone)]
+pub struct FunctionResourceHandler<Input, F> {
+    f: F,
+    marker: PhantomData<fn() -> Input>,
+}
+
+#[async_trait]
+pub trait ResourceHandler {
+    async fn call(
+        self,
+        request: Request<Body>,
+        parameter_name: String,
+    ) -> Result<Request<Body>, Response>;
+}
+
+#[async_trait]
+impl<T1, T2, Fn, Fut, R> ResourceHandler for FunctionResourceHandler<(T1, T2), Fn>
 where
-    H: Service<String, Response = R, Error = Response, Future = F> + Send + Sync + Clone + 'static,
-    F: Future<Output = Result<R, Response>> + Send + Sync,
+    T1: FromRequestParts<()> + Send,
+    T2: FromStr + Send,
+    Fn: FnOnce(T1, T2) -> Fut + Send,
+    Fut: Future<Output = Result<R, Response>> + Send,
     R: Send + Sync + 'static,
 {
-    fn clone(&self) -> Self {
-        Self {
-            parameter: self.parameter.clone(),
-            handler: self.handler.clone(),
+    async fn call(
+        self,
+        request: Request<Body>,
+        parameter_name: String,
+    ) -> Result<Request<Body>, Response> {
+        let (mut parts, body) = request.into_parts();
+        let extractor = T1::from_request_parts(&mut parts, &())
+            .await
+            .map_err(|rejection| rejection.into_response())?;
+        let parameter = get_request_parameter::<T2>(&mut parts, &parameter_name)
+            .await
+            .and_then(|value| Ok((self.f)(extractor, value)))?
+            .await?;
+
+        let mut request = Request::<Body>::from_parts(parts, body);
+        request.extensions_mut().insert(parameter);
+        Ok(request)
+    }
+}
+
+#[async_trait]
+impl<T, Fn, Fut, R> ResourceHandler for FunctionResourceHandler<(T,), Fn>
+where
+    T: FromStr + Send,
+    Fn: FnOnce(T) -> Fut + Send,
+    Fut: Future<Output = Result<R, Response>> + Send,
+    R: Send + Sync + 'static,
+{
+    async fn call(
+        self,
+        request: Request<Body>,
+        parameter_name: String,
+    ) -> Result<Request<Body>, Response> {
+        let (mut parts, body) = request.into_parts();
+        let parameter = get_request_parameter(&mut parts, &parameter_name)
+            .await
+            .and_then(|value| Ok((self.f)(value)))?
+            .await?;
+
+        let mut request = Request::<Body>::from_parts(parts, body);
+        request.extensions_mut().insert(parameter);
+        Ok(request)
+    }
+}
+
+pub trait IntoResourceHandler<Input> {
+    type ResourceHandler;
+    fn into_resource_handler(self) -> Self::ResourceHandler;
+}
+
+impl<T1, T2, F, R> IntoResourceHandler<(T1, T2)> for F
+where
+    T1: FromRequestParts<()>,
+    T2: FromStr,
+    F: FnOnce(T1, T2) -> R,
+{
+    type ResourceHandler = FunctionResourceHandler<(T1, T2), F>;
+
+    fn into_resource_handler(self) -> Self::ResourceHandler {
+        Self::ResourceHandler {
+            f: self,
+            marker: PhantomData::default(),
         }
     }
 }
 
-impl<H, F, R> ResourceLocator<H, F, R>
+impl<T, F, R> IntoResourceHandler<(T,)> for F
 where
-    H: Service<String, Response = R, Error = Response, Future = F> + Send + Sync + Clone + 'static,
-    F: Future<Output = Result<R, Response>> + Send + Sync,
-    R: Send + Sync + 'static,
+    T: FromStr,
+    F: FnOnce(T) -> R,
 {
-    pub fn new(parameter: String, handler: H) -> Self {
-        Self { parameter, handler }
+    type ResourceHandler = FunctionResourceHandler<(T,), F>;
+
+    fn into_resource_handler(self) -> Self::ResourceHandler {
+        Self::ResourceHandler {
+            f: self,
+            marker: PhantomData::default(),
+        }
     }
 }
 
-impl<H, F, R> tower::Layer<Route> for ResourceLocator<H, F, R>
+#[derive(Clone)]
+pub struct ResourceLocator<R>
 where
-    H: Service<String, Response = R, Error = Response, Future = F> + Send + Sync + Clone + 'static,
-    F: Future<Output = Result<R, Response>> + Send + Sync,
-    R: Send + Sync + 'static,
+    R: ResourceHandler + Clone,
 {
-    type Service = ResourceLocatorService<H, F, R>;
+    parameter_name: String,
+    handler: R,
+}
+
+impl<R> ResourceLocator<R>
+where
+    R: ResourceHandler + Clone,
+{
+    pub fn new<I>(
+        parameter_name: String,
+        handler: impl IntoResourceHandler<I, ResourceHandler = R>,
+    ) -> Self {
+        Self {
+            parameter_name,
+            handler: handler.into_resource_handler(),
+        }
+    }
+}
+
+impl<R> tower::Layer<Route> for ResourceLocator<R>
+where
+    R: ResourceHandler + Clone,
+{
+    type Service = ResourceLocatorService<R>;
 
     fn layer(&self, inner: Route) -> Self::Service {
-        ResourceLocatorService::<H, F, R> {
+        ResourceLocatorService {
             inner,
             handler: self.handler.clone(),
-            parameter: self.parameter.clone(),
+            parameter_name: self.parameter_name.clone(),
         }
     }
 }
 
-pub struct ResourceLocatorService<H, F, R>
+#[derive(Clone)]
+pub struct ResourceLocatorService<R>
 where
-    H: Service<String, Response = R, Error = Response, Future = F> + Send + Sync + Clone + 'static,
-    F: Future<Output = Result<R, Response>> + Send + Sync,
-    R: Send + Sync + 'static,
+    R: ResourceHandler,
 {
     inner: Route,
-    handler: H,
-    parameter: String,
+    handler: R,
+    parameter_name: String,
 }
 
-impl<H, F, R> Clone for ResourceLocatorService<H, F, R>
+impl<R> tower::Service<Request<Body>> for ResourceLocatorService<R>
 where
-    H: Service<String, Response = R, Error = Response, Future = F> + Send + Sync + Clone + 'static,
-    F: Future<Output = Result<R, Response>> + Send + Sync,
-    R: Send + Sync + 'static,
-{
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            handler: self.handler.clone(),
-            parameter: self.parameter.clone(),
-        }
-    }
-}
-
-impl<H, F, R> tower::Service<Request<Body>> for ResourceLocatorService<H, F, R>
-where
-    H: Service<String, Response = R, Error = Response, Future = F> + Send + Sync + Clone + 'static,
-    F: Future<Output = Result<R, Response>> + Send + Sync,
-    R: Send + Sync + 'static,
+    R: ResourceHandler + Send + Sync + Clone + 'static,
 {
     type Response = Response;
 
@@ -140,35 +247,13 @@ where
 
     fn call(&mut self, request: Request<Body>) -> Self::Future {
         let mut inner = self.inner.clone();
-        let parameter = self.parameter.clone();
-        let mut handler = self.handler.clone();
+        let parameter_name = self.parameter_name.clone();
+        let handler = self.handler.clone();
         let handler = async move {
-            let (mut parts, body) = request.into_parts();
-            let parameters = Path::<HashMap<String, String>>::from_request_parts(&mut parts, &())
-                .await
-                .map_err(|rejection| rejection.into_response())
-                .and_then(|parameters| {
-                    parameters
-                        .get(&parameter)
-                        .ok_or(
-                            (
-                                StatusCode::BAD_REQUEST,
-                                Json("Missing '".to_string() + &parameter + "' parameter"),
-                            )
-                                .into_response(),
-                        )
-                        .map(|parameter| parameter.clone())
-                });
-            let id = match parameters {
-                Ok(value) => match handler.call(value.clone()).await {
-                    Ok(value) => value,
-                    Err(rejection) => return Ok::<_, Infallible>(rejection),
-                },
+            let request = match handler.call(request, parameter_name).await {
+                Ok(value) => value,
                 Err(rejection) => return Ok::<_, Infallible>(rejection),
             };
-
-            let mut request = Request::<Body>::from_parts(parts, body);
-            request.extensions_mut().insert(id);
             let response = inner.call(request).await;
             response
         };
@@ -177,7 +262,78 @@ where
 }
 
 #[derive(Default)]
-pub struct ComputerSystem(MethodRouter);
+pub struct Certificates {
+    router: MethodRouter,
+    certificates: Option<Router>,
+}
+
+impl Certificates {
+    pub fn get<H, T>(self, handler: H) -> Self
+    where
+        H: Handler<T, (), Body>,
+        T: 'static,
+    {
+        let Self {
+            router,
+            certificates,
+        } = self;
+        Self {
+            router: router.get(handler),
+            certificates,
+        }
+    }
+
+    pub fn certificates(self, certificates: Router) -> Self {
+        let Self { router, .. } = self;
+        Self {
+            router,
+            certificates: Some(certificates),
+        }
+    }
+
+    pub fn into_router(self) -> Router {
+        let Self {
+            router,
+            certificates,
+        } = self;
+        certificates
+            .map_or(Router::default(), |certificates: Router| {
+                Router::new().nest("/:certificate_id", certificates)
+            })
+            .route(
+                "/",
+                router.fallback(|| async {
+                    (
+                        StatusCode::METHOD_NOT_ALLOWED,
+                        Json(redfish_error::one_message(Base::OperationNotAllowed.into())),
+                    )
+                }),
+            )
+    }
+}
+
+#[derive(Default)]
+pub struct Certificate(MethodRouter);
+
+impl Certificate {
+    pub fn get<H, T>(self, handler: H) -> Self
+    where
+        H: Handler<T, (), Body>,
+        T: 'static,
+    {
+        Self(self.0.get(handler))
+    }
+
+    pub fn into_router(self) -> Router {
+        Router::new().route("/", self.0)
+    }
+}
+
+#[derive(Default)]
+pub struct ComputerSystem {
+    router: MethodRouter,
+    certificates: Option<Router>,
+}
 
 impl ComputerSystem {
     pub fn put<H, T>(self, handler: H) -> Self
@@ -185,11 +341,31 @@ impl ComputerSystem {
         H: Handler<T, (), Body>,
         T: 'static,
     {
-        Self(self.0.put(handler))
+        let Self {
+            router,
+            certificates,
+        } = self;
+        Self {
+            router: router.put(handler),
+            certificates,
+        }
+    }
+
+    pub fn certificates(self, router: Router) -> Self {
+        Self {
+            router: self.router,
+            certificates: Some(router),
+        }
     }
 
     pub fn into_router(self) -> Router {
-        Router::new().route("/", self.0)
+        let Self {
+            router,
+            certificates,
+        } = self;
+        Router::new()
+            .route("/", router)
+            .nest("/Certificates", certificates.unwrap())
     }
 }
 

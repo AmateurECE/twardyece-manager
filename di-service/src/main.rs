@@ -19,6 +19,7 @@ use std::{collections::HashMap, fs::File};
 use axum::{response::Response, Extension, Json, Router};
 use clap::Parser;
 use redfish_codegen::models::{
+    certificate_collection::CertificateCollection,
     computer_system::v1_20_0::ComputerSystem as System,
     computer_system_collection::ComputerSystemCollection as Model,
 };
@@ -26,8 +27,9 @@ use seuss::auth::Role;
 
 mod computer_system_collection;
 
-use computer_system_collection::{ComputerSystem, ComputerSystemCollection, ResourceLocator};
-use tower::service_fn;
+use computer_system_collection::{
+    Certificate, Certificates, ComputerSystem, ComputerSystemCollection, ResourceLocator,
+};
 use tower_http::trace::TraceLayer;
 use tracing::{event, Level};
 
@@ -82,12 +84,29 @@ async fn main() -> anyhow::Result<()> {
                                 Ok::<_, Response>(Json(system))
                             },
                         )
+                        .certificates(
+                            Certificates::default()
+                                .get(|| async { Json(CertificateCollection::default()) })
+                                .certificates(
+                                    Certificate::default()
+                                        .get(|Extension(system): Extension<u32>, Extension(id): Extension<String>| async move {
+                                            event!(Level::INFO, "computer_system_id={}, certificate_id={}", system, id);
+                                        })
+                                        .into_router()
+                                        .route_layer(ResourceLocator::new(
+                                            "certificate_id".to_string(),
+                                            |Extension(system): Extension<u32>, id: String| async move {
+                                                event!(Level::INFO, "in middleware, system is {}", system);
+                                                Ok::<_, Response>(id)
+                                            }
+                                        )),
+                                )
+                                .into_router(),
+                        )
                         .into_router()
                         .route_layer(ResourceLocator::new(
                             "computer_system_id".to_string(),
-                            service_fn(|id: String| async move {
-                                u32::from_str_radix(&id, 10).map_err(redfish_map_err)
-                            }),
+                            |id: u32| async move { Ok::<_, Response>(id) },
                         )),
                 )
                 .into_router(),
