@@ -342,7 +342,7 @@ dependencies = [
  "axum",
  "clap",
  "redfish-codegen",
- "redfish-service",
+ "redfish-core",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -946,6 +946,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "redfish-core"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "redfish-codegen",
+ "serde",
+]
+
+[[package]]
 name = "redfish-macros"
 version = "0.1.1"
 dependencies = [
@@ -954,21 +963,6 @@ dependencies = [
  "quote",
  "regex",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "redfish-service"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "axum-server",
- "futures",
- "serde",
- "signal-hook",
- "signal-hook-tokio",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -1093,18 +1087,18 @@ dependencies = [
 
 [[package]]
 name = "serde"
-version = "1.0.163"
+version = "1.0.164"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2113ab51b87a539ae008b5c6c02dc020ffa39afd2d83cffcb3f4eb2722cebec2"
+checksum = "9e8c8cf938e98f769bc164923b06dce91cea1751522f46f8466461af04c9027d"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.163"
+version = "1.0.164"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c805777e3930c8883389c602315a24224bcc738b63905ef87cd1420353ea93e"
+checksum = "d9735b638ccc51c28bf6914d90a2e9725b377144fc612c49a611fddd1b631d68"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1160,14 +1154,23 @@ dependencies = [
 name = "seuss"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum",
+ "axum-server",
  "base64",
  "chrono",
+ "futures",
  "pam",
  "rand",
  "redfish-codegen",
+ "redfish-core",
  "serde",
  "serde_json",
+ "signal-hook",
+ "signal-hook-tokio",
+ "tokio",
+ "tower",
+ "tracing",
  "users 0.11.0",
 ]
 
@@ -1297,9 +1300,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.28.1"
+version = "1.28.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0aa32867d44e6f2ce3385e89dceb990188b8bb0fb25b0cf576647a6f98ac5105"
+checksum = "94d7b1cfd2aa4011f2de74c2c4c63665e27a71006b0a192dcd2710272e73dfa2"
 dependencies = [
  "autocfg",
  "bytes",
@@ -1469,7 +1472,6 @@ dependencies = [
  "axum",
  "clap",
  "redfish-codegen",
- "redfish-service",
  "serde",
  "serde_json",
  "serde_yaml",

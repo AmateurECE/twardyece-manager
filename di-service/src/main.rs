@@ -23,18 +23,16 @@ use redfish_codegen::models::{
     computer_system::v1_20_0::ComputerSystem as System,
     computer_system_collection::ComputerSystemCollection as Model,
 };
-use seuss::auth::Role;
 
 mod computer_system_collection;
 
 use computer_system_collection::{
-    Certificate, CertificateCollection, ComputerSystem, ComputerSystemCollection, NoAuth,
-    ResourceLocator,
+    Certificate, CertificateCollection, ComputerSystem, ComputerSystemCollection,
 };
+use redfish_core::privilege::Role;
+use seuss::{auth::NoAuth, error::redfish_map_err, middleware::ResourceLocator};
 use tower_http::trace::TraceLayer;
 use tracing::{event, Level};
-
-use crate::computer_system_collection::redfish_map_err;
 
 #[derive(Parser)]
 struct Args {
@@ -48,7 +46,7 @@ struct Args {
 struct Configuration {
     #[serde(rename = "role-map")]
     role_map: HashMap<Role, String>,
-    server: redfish_service::Configuration,
+    server: seuss::router::Configuration,
 }
 
 #[tokio::main]
@@ -115,5 +113,5 @@ async fn main() -> anyhow::Result<()> {
         )
         .layer(TraceLayer::new_for_http());
 
-    redfish_service::serve(config.server, app).await
+    seuss::router::serve(config.server, app).await
 }
