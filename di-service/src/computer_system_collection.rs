@@ -62,9 +62,7 @@ where
         .and_then(|parameters| {
             parameters
                 .get(parameter_name)
-                .ok_or(redfish_map_err(
-                    "Missing '".to_string() + parameter_name + "' parameter",
-                ))
+                .ok_or_else(|| redfish_map_err("Missing '".to_string() + parameter_name + "' parameter"))
                 .map(|parameter| parameter.clone())
         })
         .and_then(|value| T::from_str(&value).map_err(redfish_map_err_no_log))
