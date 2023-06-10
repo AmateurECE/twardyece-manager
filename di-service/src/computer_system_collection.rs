@@ -22,7 +22,7 @@ use std::{
 use axum::{
     async_trait,
     body::Body,
-    extract::{FromRequestParts, Path},
+    extract::{FromRequestParts, Path, State},
     handler::Handler,
     http::{request::Parts, Request, StatusCode},
     response::{IntoResponse, Response},
@@ -30,7 +30,11 @@ use axum::{
     Json, Router,
 };
 use redfish_codegen::registries::base::v1_15_0::Base;
-use seuss::redfish_error;
+use seuss::{
+    auth::{AuthenticateRequest, ConfigureComponents, Login},
+    extract::RedfishAuth,
+    redfish_error,
+};
 use tracing::{event, Level};
 
 pub fn redfish_map_err<E>(error: E) -> Response
@@ -47,6 +51,29 @@ pub fn redfish_map_err_no_log<E>(_: E) -> Response {
         Json(redfish_error::one_message(Base::InternalError.into())),
     )
         .into_response()
+}
+
+#[derive(Clone, Default)]
+pub struct NoAuth;
+
+impl AuthenticateRequest for NoAuth {
+    fn authenticate_request(
+        &self,
+        _parts: &mut Parts,
+    ) -> Result<Option<seuss::auth::AuthenticatedUser>, Response> {
+        Ok(None)
+    }
+
+    fn challenge(&self) -> Vec<&'static str> {
+        // Should never be called, because authenticate_request always returns Ok
+        unimplemented!()
+    }
+}
+
+impl<'a> AsRef<dyn AuthenticateRequest + 'a> for NoAuth {
+    fn as_ref(&self) -> &(dyn AuthenticateRequest + 'a) {
+        self
+    }
 }
 
 async fn get_request_parameter<T>(
@@ -256,15 +283,21 @@ where
 }
 
 #[derive(Default)]
-pub struct Certificates {
-    router: MethodRouter,
-    certificates: Option<Router>,
+pub struct CertificateCollection<S>
+where
+    S: Clone,
+{
+    router: MethodRouter<S>,
+    certificates: Option<Router<S>>,
 }
 
-impl Certificates {
+impl<S> CertificateCollection<S>
+where
+    S: AsRef<dyn AuthenticateRequest> + Clone + Send + Sync + 'static,
+{
     pub fn get<H, T>(self, handler: H) -> Self
     where
-        H: Handler<T, (), Body>,
+        H: Handler<T, S, Body>,
         T: 'static,
     {
         let Self {
@@ -272,12 +305,19 @@ impl Certificates {
             certificates,
         } = self;
         Self {
-            router: router.get(handler),
+            router: router.get(
+                |auth: RedfishAuth<ConfigureComponents>,
+                 State(state): State<S>,
+                 mut request: Request<Body>| async {
+                    request.extensions_mut().insert(auth.user);
+                    handler.call(request, state).await
+                },
+            ),
             certificates,
         }
     }
 
-    pub fn certificates(self, certificates: Router) -> Self {
+    pub fn certificates(self, certificates: Router<S>) -> Self {
         let Self { router, .. } = self;
         Self {
             router,
@@ -285,13 +325,13 @@ impl Certificates {
         }
     }
 
-    pub fn into_router(self) -> Router {
+    pub fn into_router(self) -> Router<S> {
         let Self {
             router,
             certificates,
         } = self;
         certificates
-            .map_or(Router::default(), |certificates: Router| {
+            .map_or(Router::default(), |certificates| {
                 Router::new().nest("/:certificate_id", certificates)
             })
             .route(
@@ -307,32 +347,53 @@ impl Certificates {
 }
 
 #[derive(Default)]
-pub struct Certificate(MethodRouter);
+pub struct Certificate<S>(MethodRouter<S>)
+where
+    S: Clone;
 
-impl Certificate {
+impl<S> Certificate<S>
+where
+    S: AsRef<dyn AuthenticateRequest> + Clone + Send + Sync + 'static,
+{
     pub fn get<H, T>(self, handler: H) -> Self
     where
-        H: Handler<T, (), Body>,
+        H: Handler<T, S, Body>,
         T: 'static,
     {
-        Self(self.0.get(handler))
+        // The privilege "ConfigureManager" is the default required for the
+        // Certificate component, but Redfish Privilege Mapping 1.3.1 specifies
+        // a subordinate override for the component ComputerSystem.
+        Self(self.0.get(
+            |auth: RedfishAuth<ConfigureComponents>,
+             State(state): State<S>,
+             mut request: Request<Body>| async {
+                request.extensions_mut().insert(auth.user);
+                handler.call(request, state).await
+            },
+        ))
     }
 
-    pub fn into_router(self) -> Router {
+    pub fn into_router(self) -> Router<S> {
         Router::new().route("/", self.0)
     }
 }
 
 #[derive(Default)]
-pub struct ComputerSystem {
-    router: MethodRouter,
-    certificates: Option<Router>,
+pub struct ComputerSystem<S>
+where
+    S: Clone,
+{
+    router: MethodRouter<S>,
+    certificates: Option<Router<S>>,
 }
 
-impl ComputerSystem {
+impl<S> ComputerSystem<S>
+where
+    S: AsRef<dyn AuthenticateRequest> + Clone + Send + Sync + 'static,
+{
     pub fn put<H, T>(self, handler: H) -> Self
     where
-        H: Handler<T, (), Body>,
+        H: Handler<T, S, Body>,
         T: 'static,
     {
         let Self {
@@ -340,19 +401,26 @@ impl ComputerSystem {
             certificates,
         } = self;
         Self {
-            router: router.put(handler),
+            router: router.put(
+                |auth: RedfishAuth<ConfigureComponents>,
+                 State(state): State<S>,
+                 mut request: Request<Body>| async {
+                    request.extensions_mut().insert(auth.user);
+                    handler.call(request, state).await
+                },
+            ),
             certificates,
         }
     }
 
-    pub fn certificates(self, router: Router) -> Self {
+    pub fn certificates(self, router: Router<S>) -> Self {
         Self {
             router: self.router,
             certificates: Some(router),
         }
     }
 
-    pub fn into_router(self) -> Router {
+    pub fn into_router(self) -> Router<S> {
         let Self {
             router,
             certificates,
@@ -364,15 +432,21 @@ impl ComputerSystem {
 }
 
 #[derive(Default)]
-pub struct ComputerSystemCollection {
-    collection: MethodRouter,
-    systems: Option<Router>,
+pub struct ComputerSystemCollection<S>
+where
+    S: Clone,
+{
+    collection: MethodRouter<S>,
+    systems: Option<Router<S>>,
 }
 
-impl ComputerSystemCollection {
+impl<S> ComputerSystemCollection<S>
+where
+    S: AsRef<dyn AuthenticateRequest> + Clone + Send + Sync + 'static,
+{
     pub fn get<H, T>(self, handler: H) -> Self
     where
-        H: Handler<T, (), Body>,
+        H: Handler<T, S, Body>,
         T: 'static,
     {
         let Self {
@@ -380,14 +454,22 @@ impl ComputerSystemCollection {
             systems,
         } = self;
         Self {
-            collection: collection.get(handler),
+            collection:
+                collection.get(
+                    |auth: RedfishAuth<Login>,
+                     State(state): State<S>,
+                     mut request: Request<Body>| async {
+                        request.extensions_mut().insert(auth.user);
+                        handler.call(request, state).await
+                    },
+                ),
             systems,
         }
     }
 
     pub fn post<H, T>(self, handler: H) -> Self
     where
-        H: Handler<T, (), Body>,
+        H: Handler<T, S, Body>,
         T: 'static,
     {
         let Self {
@@ -395,25 +477,32 @@ impl ComputerSystemCollection {
             systems,
         } = self;
         Self {
-            collection: collection.post(handler),
+            collection: collection.post(
+                |auth: RedfishAuth<ConfigureComponents>,
+                 State(state): State<S>,
+                 mut request: Request<Body>| async {
+                    request.extensions_mut().insert(auth.user);
+                    handler.call(request, state).await
+                },
+            ),
             systems,
         }
     }
 
-    pub fn systems(self, systems: Router) -> Self {
+    pub fn systems(self, systems: Router<S>) -> Self {
         Self {
             collection: self.collection,
             systems: Some(systems),
         }
     }
 
-    pub fn into_router(self) -> Router {
+    pub fn into_router(self) -> Router<S> {
         let Self {
             collection,
             systems,
         } = self;
         systems
-            .map_or(Router::default(), |systems: Router| {
+            .map_or(Router::default(), |systems| {
                 Router::new().nest("/:computer_system_id", systems)
             })
             .route(
