@@ -17,22 +17,35 @@
 use std::{collections::HashMap, fs::File};
 
 use axum::{response::Response, Extension, Json, Router};
+use certificate::Certificate;
+use certificate_collection::CertificateCollection;
 use clap::Parser;
+use computer_system::{CertificateCollectionPrivileges, ComputerSystem};
 use redfish_codegen::models::{
     certificate_collection::CertificateCollection as CertificateCollectionModel,
     computer_system::v1_20_0::ComputerSystem as System,
     computer_system_collection::ComputerSystemCollection as Model,
 };
 
+mod certificate;
+mod certificate_collection;
+mod computer_system;
 mod computer_system_collection;
 
-use computer_system_collection::{
-    Certificate, CertificateCollection, ComputerSystem, ComputerSystemCollection,
-};
-use redfish_core::privilege::Role;
+use computer_system_collection::ComputerSystemCollection;
+use redfish_core::privilege::{AsPrivilege, Role};
 use seuss::{auth::NoAuth, error::redfish_map_err, middleware::ResourceLocator};
 use tower_http::trace::TraceLayer;
 use tracing::{event, Level};
+
+pub trait PrivilegeTemplate {
+    type Get: AsPrivilege;
+    type Post: AsPrivilege;
+    type Put: AsPrivilege;
+    type Patch: AsPrivilege;
+    type Delete: AsPrivilege;
+    type Head: AsPrivilege;
+}
 
 #[derive(Parser)]
 struct Args {
@@ -84,7 +97,7 @@ async fn main() -> anyhow::Result<()> {
                             },
                         )
                         .certificates(
-                            CertificateCollection::default()
+                            CertificateCollection::<_, CertificateCollectionPrivileges>::with_privilege()
                                 .get(|| async { Json(CertificateCollectionModel::default()) })
                                 .certificates(
                                     Certificate::default()
