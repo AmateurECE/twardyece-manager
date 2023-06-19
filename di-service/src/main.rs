@@ -33,18 +33,18 @@ mod computer_system;
 mod computer_system_collection;
 
 use computer_system_collection::ComputerSystemCollection;
-use redfish_core::privilege::{AsPrivilege, Role};
+use redfish_core::privilege::{SatisfiesPrivilege, Role};
 use seuss::{auth::NoAuth, error::redfish_map_err, middleware::ResourceLocator};
 use tower_http::trace::TraceLayer;
 use tracing::{event, Level};
 
 pub trait OperationPrivilegeMapping {
-    type Get: AsPrivilege;
-    type Post: AsPrivilege;
-    type Put: AsPrivilege;
-    type Patch: AsPrivilege;
-    type Delete: AsPrivilege;
-    type Head: AsPrivilege;
+    type Get: SatisfiesPrivilege;
+    type Head: SatisfiesPrivilege;
+    type Post: SatisfiesPrivilege;
+    type Put: SatisfiesPrivilege;
+    type Patch: SatisfiesPrivilege;
+    type Delete: SatisfiesPrivilege;
 }
 
 #[derive(Parser)]
