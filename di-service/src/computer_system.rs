@@ -1,8 +1,12 @@
+use std::marker::PhantomData;
+
 use axum::{
     body::Body, extract::State, handler::Handler, http::Request, routing::MethodRouter, Router,
 };
 use redfish_core::{
-    auth::AuthenticateRequest, extract::RedfishAuth, privilege::ConfigureComponents,
+    auth::AuthenticateRequest,
+    extract::RedfishAuth,
+    privilege::{ConfigureComponents, Login},
 };
 
 use super::PrivilegeTemplate;
@@ -27,52 +31,68 @@ impl PrivilegeTemplate for CertificatePrivileges {
     type Head = ConfigureComponents;
 }
 
-#[derive(Default)]
-pub struct ComputerSystem<S>
+pub struct DefaultPrivileges;
+impl PrivilegeTemplate for DefaultPrivileges {
+    type Get = Login;
+    type Post = ConfigureComponents;
+    type Put = ConfigureComponents;
+    type Patch = ConfigureComponents;
+    type Delete = ConfigureComponents;
+    type Head = Login;
+}
+
+pub struct ComputerSystem<S, P>
 where
     S: Clone,
 {
     router: MethodRouter<S>,
     certificates: Option<Router<S>>,
+    marker: PhantomData<fn() -> P>,
 }
 
-impl<S> ComputerSystem<S>
+impl<S> Default for ComputerSystem<S, DefaultPrivileges>
+where
+    S: Clone,
+{
+    fn default() -> Self {
+        Self {
+            router: Default::default(),
+            certificates: Default::default(),
+            marker: Default::default(),
+        }
+    }
+}
+
+impl<S, P> ComputerSystem<S, P>
 where
     S: AsRef<dyn AuthenticateRequest> + Clone + Send + Sync + 'static,
+    P: PrivilegeTemplate + 'static,
+    <P as PrivilegeTemplate>::Put: Send,
 {
-    pub fn put<H, T>(self, handler: H) -> Self
+    pub fn put<H, T>(mut self, handler: H) -> Self
     where
         H: Handler<T, S, Body>,
         T: 'static,
     {
-        let Self {
-            router,
-            certificates,
-        } = self;
-        Self {
-            router: router.put(
-                |auth: RedfishAuth<ConfigureComponents>,
-                 State(state): State<S>,
-                 mut request: Request<Body>| async {
-                    request.extensions_mut().insert(auth.user);
-                    handler.call(request, state).await
-                },
-            ),
-            certificates,
-        }
+        self.router = self.router.put(
+            |auth: RedfishAuth<P::Put>, State(state): State<S>, mut request: Request<Body>| async {
+                request.extensions_mut().insert(auth.user);
+                handler.call(request, state).await
+            },
+        );
+        self
     }
 
-    pub fn certificates(self, router: Router<S>) -> Self {
-        Self {
-            router: self.router,
-            certificates: Some(router),
-        }
+    pub fn certificates(mut self, router: Router<S>) -> Self {
+        self.certificates = Some(router);
+        self
     }
 
     pub fn into_router(self) -> Router<S> {
         let Self {
             router,
             certificates,
+            ..
         } = self;
         Router::new()
             .route("/", router)

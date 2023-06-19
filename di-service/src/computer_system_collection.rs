@@ -14,6 +14,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::marker::PhantomData;
+
 use axum::{
     body::Body,
     extract::State,
@@ -30,88 +32,97 @@ use redfish_core::{
     privilege::{ConfigureComponents, Login},
 };
 
-#[derive(Default)]
-pub struct ComputerSystemCollection<S>
+use crate::PrivilegeTemplate;
+
+pub struct DefaultPrivileges;
+impl PrivilegeTemplate for DefaultPrivileges {
+    type Get = Login;
+    type Post = ConfigureComponents;
+    type Put = ConfigureComponents;
+    type Patch = ConfigureComponents;
+    type Delete = ConfigureComponents;
+    type Head = Login;
+}
+
+pub struct ComputerSystemCollection<S, P>
 where
     S: Clone,
 {
-    collection: MethodRouter<S>,
+    router: MethodRouter<S>,
     systems: Option<Router<S>>,
+    marker: PhantomData<fn() -> P>,
 }
 
-impl<S> ComputerSystemCollection<S>
+impl<S> Default for ComputerSystemCollection<S, DefaultPrivileges>
+where
+    S: Clone,
+{
+    fn default() -> Self {
+        Self {
+            router: Default::default(),
+            systems: Default::default(),
+            marker: Default::default(),
+        }
+    }
+}
+
+impl<S, P> ComputerSystemCollection<S, P>
 where
     S: AsRef<dyn AuthenticateRequest> + Clone + Send + Sync + 'static,
+    P: PrivilegeTemplate + 'static,
+    <P as PrivilegeTemplate>::Get: Send,
+    <P as PrivilegeTemplate>::Post: Send,
 {
-    pub fn get<H, T>(self, handler: H) -> Self
+    pub fn get<H, T>(mut self, handler: H) -> Self
     where
         H: Handler<T, S, Body>,
         T: 'static,
     {
-        let Self {
-            collection,
-            systems,
-        } = self;
-        Self {
-            collection:
-                collection.get(
-                    |auth: RedfishAuth<Login>,
-                     State(state): State<S>,
-                     mut request: Request<Body>| async {
-                        request.extensions_mut().insert(auth.user);
-                        handler.call(request, state).await
-                    },
-                ),
-            systems,
-        }
+        self.router = self.router.get(
+            |auth: RedfishAuth<P::Get>, State(state): State<S>, mut request: Request<Body>| async {
+                request.extensions_mut().insert(auth.user);
+                handler.call(request, state).await
+            },
+        );
+        self
     }
 
-    pub fn post<H, T>(self, handler: H) -> Self
+    pub fn post<H, T>(mut self, handler: H) -> Self
     where
         H: Handler<T, S, Body>,
         T: 'static,
     {
-        let Self {
-            collection,
-            systems,
-        } = self;
-        Self {
-            collection: collection.post(
-                |auth: RedfishAuth<ConfigureComponents>,
-                 State(state): State<S>,
-                 mut request: Request<Body>| async {
-                    request.extensions_mut().insert(auth.user);
-                    handler.call(request, state).await
-                },
-            ),
-            systems,
-        }
+        self.router = self.router.post(
+            |auth: RedfishAuth<P::Post>, State(state): State<S>, mut request: Request<Body>| async {
+                request.extensions_mut().insert(auth.user);
+                handler.call(request, state).await
+            },
+        );
+        self
     }
 
-    pub fn systems(self, systems: Router<S>) -> Self {
-        Self {
-            collection: self.collection,
-            systems: Some(systems),
-        }
+    pub fn systems(mut self, systems: Router<S>) -> Self {
+        self.systems = Some(systems);
+        self
     }
 
     pub fn into_router(self) -> Router<S> {
         let Self {
-            collection,
-            systems,
+            router, systems, ..
         } = self;
-        systems
-            .map_or(Router::default(), |systems| {
-                Router::new().nest("/:computer_system_id", systems)
-            })
-            .route(
-                "/",
-                collection.fallback(|| async {
-                    (
-                        StatusCode::METHOD_NOT_ALLOWED,
-                        Json(error::one_message(Base::OperationNotAllowed.into())),
-                    )
-                }),
-            )
+        let result = Router::default();
+        let result = match systems {
+            Some(systems) => result.nest("/:computer_system_id", systems),
+            None => result,
+        };
+        result.route(
+            "/",
+            router.fallback(|| async {
+                (
+                    StatusCode::METHOD_NOT_ALLOWED,
+                    Json(error::one_message(Base::OperationNotAllowed.into())),
+                )
+            }),
+        )
     }
 }
