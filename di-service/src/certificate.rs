@@ -44,7 +44,7 @@ where
     P: OperationPrivilegeMapping + 'static,
     <P as OperationPrivilegeMapping>::Get: Send,
 {
-    pub fn with_privileges() -> Self {
+    pub fn new() -> Self {
         Self {
             router: Default::default(),
             marker: Default::default(),

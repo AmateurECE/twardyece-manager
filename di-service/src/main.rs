@@ -33,7 +33,7 @@ mod computer_system;
 mod computer_system_collection;
 
 use computer_system_collection::ComputerSystemCollection;
-use redfish_core::privilege::{SatisfiesPrivilege, Role};
+use redfish_core::privilege::{Role, SatisfiesPrivilege};
 use seuss::{auth::NoAuth, error::redfish_map_err, middleware::ResourceLocator};
 use tower_http::trace::TraceLayer;
 use tracing::{event, Level};
@@ -97,10 +97,10 @@ async fn main() -> anyhow::Result<()> {
                             },
                         )
                         .certificates(
-                            CertificateCollection::<_, CertificateCollectionPrivileges>::with_privileges()
+                            CertificateCollection::<_, CertificateCollectionPrivileges>::new()
                                 .get(|| async { Json(CertificateCollectionModel::default()) })
                                 .certificates(
-                                    Certificate::<_, CertificatePrivileges>::with_privileges()
+                                    Certificate::<_, CertificatePrivileges>::new()
                                         .get(|Extension(system): Extension<u32>, Extension(id): Extension<String>| async move {
                                             event!(Level::INFO, "computer_system_id={}, certificate_id={}", system, id);
                                         })
