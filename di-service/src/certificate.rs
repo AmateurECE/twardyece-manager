@@ -1,38 +1,71 @@
+use std::marker::PhantomData;
+
 use axum::{
     body::Body, extract::State, handler::Handler, http::Request, routing::MethodRouter, Router,
 };
-use redfish_core::{
-    auth::AuthenticateRequest, extract::RedfishAuth, privilege::ConfigureComponents,
-};
+use redfish_core::{auth::AuthenticateRequest, extract::RedfishAuth, privilege::ConfigureManager};
 
-#[derive(Default)]
-pub struct Certificate<S>(MethodRouter<S>)
+use crate::PrivilegeTemplate;
+
+pub struct DefaultPrivileges;
+
+impl PrivilegeTemplate for DefaultPrivileges {
+    type Get = ConfigureManager;
+    type Post = ConfigureManager;
+    type Put = ConfigureManager;
+    type Patch = ConfigureManager;
+    type Delete = ConfigureManager;
+    type Head = ConfigureManager;
+}
+
+pub struct Certificate<S, P>
 where
-    S: Clone;
+    S: Clone,
+{
+    router: MethodRouter<S>,
+    marker: PhantomData<fn() -> P>,
+}
 
-impl<S> Certificate<S>
+impl<S> Default for Certificate<S, DefaultPrivileges>
+where
+    S: Clone,
+{
+    fn default() -> Self {
+        Self {
+            router: Default::default(),
+            marker: Default::default(),
+        }
+    }
+}
+
+impl<S, P> Certificate<S, P>
 where
     S: AsRef<dyn AuthenticateRequest> + Clone + Send + Sync + 'static,
+    P: PrivilegeTemplate + 'static,
+    <P as PrivilegeTemplate>::Get: Send,
 {
-    pub fn get<H, T>(self, handler: H) -> Self
+    pub fn with_privileges() -> Self {
+        Self {
+            router: Default::default(),
+            marker: Default::default(),
+        }
+    }
+
+    pub fn get<H, T>(mut self, handler: H) -> Self
     where
         H: Handler<T, S, Body>,
         T: 'static,
     {
-        // The privilege "ConfigureManager" is the default required for the
-        // Certificate component, but Redfish Privilege Mapping 1.3.1 specifies
-        // a subordinate override for the component ComputerSystem.
-        Self(self.0.get(
-            |auth: RedfishAuth<ConfigureComponents>,
-             State(state): State<S>,
-             mut request: Request<Body>| async {
+        self.router = self.router.get(
+            |auth: RedfishAuth<P::Get>, State(state): State<S>, mut request: Request<Body>| async {
                 request.extensions_mut().insert(auth.user);
                 handler.call(request, state).await
             },
-        ))
+        );
+        self
     }
 
     pub fn into_router(self) -> Router<S> {
-        Router::new().route("/", self.0)
+        Router::new().route("/", self.router)
     }
 }

@@ -15,7 +15,6 @@ use redfish_core::{
 
 use super::PrivilegeTemplate;
 
-#[derive(Clone)]
 pub struct DefaultPrivileges;
 impl PrivilegeTemplate for DefaultPrivileges {
     type Get = ConfigureManager;
@@ -29,7 +28,6 @@ impl PrivilegeTemplate for DefaultPrivileges {
 pub struct CertificateCollection<S, P>
 where
     S: Clone,
-    P: PrivilegeTemplate,
 {
     router: MethodRouter<S>,
     certificates: Option<Router<S>>,
@@ -52,10 +50,10 @@ where
 impl<S, P> CertificateCollection<S, P>
 where
     S: AsRef<dyn AuthenticateRequest> + Clone + Send + Sync + 'static,
-    P: PrivilegeTemplate + Clone + Send + Sync + 'static,
-    <P as PrivilegeTemplate>::Get: Clone + Send + Sync + 'static,
+    P: PrivilegeTemplate + 'static,
+    <P as PrivilegeTemplate>::Get: Send,
 {
-    pub fn with_privilege() -> Self {
+    pub fn with_privileges() -> Self {
         Self {
             router: Default::default(),
             certificates: Default::default(),

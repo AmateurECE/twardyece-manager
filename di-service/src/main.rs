@@ -20,7 +20,7 @@ use axum::{response::Response, Extension, Json, Router};
 use certificate::Certificate;
 use certificate_collection::CertificateCollection;
 use clap::Parser;
-use computer_system::{CertificateCollectionPrivileges, ComputerSystem};
+use computer_system::{CertificateCollectionPrivileges, CertificatePrivileges, ComputerSystem};
 use redfish_codegen::models::{
     certificate_collection::CertificateCollection as CertificateCollectionModel,
     computer_system::v1_20_0::ComputerSystem as System,
@@ -97,10 +97,10 @@ async fn main() -> anyhow::Result<()> {
                             },
                         )
                         .certificates(
-                            CertificateCollection::<_, CertificateCollectionPrivileges>::with_privilege()
+                            CertificateCollection::<_, CertificateCollectionPrivileges>::with_privileges()
                                 .get(|| async { Json(CertificateCollectionModel::default()) })
                                 .certificates(
-                                    Certificate::default()
+                                    Certificate::<_, CertificatePrivileges>::with_privileges()
                                         .get(|Extension(system): Extension<u32>, Extension(id): Extension<String>| async move {
                                             event!(Level::INFO, "computer_system_id={}, certificate_id={}", system, id);
                                         })

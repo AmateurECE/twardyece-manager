@@ -7,9 +7,18 @@ use redfish_core::{
 
 use super::PrivilegeTemplate;
 
-#[derive(Clone)]
 pub struct CertificateCollectionPrivileges;
 impl PrivilegeTemplate for CertificateCollectionPrivileges {
+    type Get = ConfigureComponents;
+    type Post = ConfigureComponents;
+    type Put = ConfigureComponents;
+    type Patch = ConfigureComponents;
+    type Delete = ConfigureComponents;
+    type Head = ConfigureComponents;
+}
+
+pub struct CertificatePrivileges;
+impl PrivilegeTemplate for CertificatePrivileges {
     type Get = ConfigureComponents;
     type Post = ConfigureComponents;
     type Put = ConfigureComponents;
