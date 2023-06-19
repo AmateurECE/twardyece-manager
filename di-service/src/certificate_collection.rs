@@ -10,10 +10,11 @@ use axum::{
 };
 use redfish_codegen::registries::base::v1_15_0::Base;
 use redfish_core::{
-    auth::AuthenticateRequest, error, extract::RedfishAuth, privilege::ConfigureManager,
+    auth::AuthenticateRequest,
+    error,
+    extract::RedfishAuth,
+    privilege::{ConfigureManager, OperationPrivilegeMapping},
 };
-
-use super::OperationPrivilegeMapping;
 
 pub struct DefaultPrivileges;
 impl OperationPrivilegeMapping for DefaultPrivileges {

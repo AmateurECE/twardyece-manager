@@ -3,9 +3,11 @@ use std::marker::PhantomData;
 use axum::{
     body::Body, extract::State, handler::Handler, http::Request, routing::MethodRouter, Router,
 };
-use redfish_core::{auth::AuthenticateRequest, extract::RedfishAuth, privilege::ConfigureManager};
-
-use crate::OperationPrivilegeMapping;
+use redfish_core::{
+    auth::AuthenticateRequest,
+    extract::RedfishAuth,
+    privilege::{ConfigureManager, OperationPrivilegeMapping},
+};
 
 pub struct DefaultPrivileges;
 

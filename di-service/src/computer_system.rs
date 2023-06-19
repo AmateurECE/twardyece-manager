@@ -6,10 +6,8 @@ use axum::{
 use redfish_core::{
     auth::AuthenticateRequest,
     extract::RedfishAuth,
-    privilege::{ConfigureComponents, Login},
+    privilege::{ConfigureComponents, Login, OperationPrivilegeMapping},
 };
-
-use crate::OperationPrivilegeMapping;
 
 pub struct CertificateCollectionPrivileges;
 impl OperationPrivilegeMapping for CertificateCollectionPrivileges {

@@ -29,10 +29,8 @@ use redfish_core::{
     auth::AuthenticateRequest,
     error,
     extract::RedfishAuth,
-    privilege::{ConfigureComponents, Login},
+    privilege::{ConfigureComponents, Login, OperationPrivilegeMapping},
 };
-
-use crate::OperationPrivilegeMapping;
 
 pub struct DefaultPrivileges;
 impl OperationPrivilegeMapping for DefaultPrivileges {
