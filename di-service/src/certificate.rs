@@ -5,11 +5,11 @@ use axum::{
 };
 use redfish_core::{auth::AuthenticateRequest, extract::RedfishAuth, privilege::ConfigureManager};
 
-use crate::PrivilegeTemplate;
+use crate::OperationPrivilegeMapping;
 
 pub struct DefaultPrivileges;
 
-impl PrivilegeTemplate for DefaultPrivileges {
+impl OperationPrivilegeMapping for DefaultPrivileges {
     type Get = ConfigureManager;
     type Post = ConfigureManager;
     type Put = ConfigureManager;
@@ -41,8 +41,8 @@ where
 impl<S, P> Certificate<S, P>
 where
     S: AsRef<dyn AuthenticateRequest> + Clone + Send + Sync + 'static,
-    P: PrivilegeTemplate + 'static,
-    <P as PrivilegeTemplate>::Get: Send,
+    P: OperationPrivilegeMapping + 'static,
+    <P as OperationPrivilegeMapping>::Get: Send,
 {
     pub fn with_privileges() -> Self {
         Self {

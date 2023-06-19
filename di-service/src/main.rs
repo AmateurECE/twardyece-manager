@@ -38,7 +38,7 @@ use seuss::{auth::NoAuth, error::redfish_map_err, middleware::ResourceLocator};
 use tower_http::trace::TraceLayer;
 use tracing::{event, Level};
 
-pub trait PrivilegeTemplate {
+pub trait OperationPrivilegeMapping {
     type Get: AsPrivilege;
     type Post: AsPrivilege;
     type Put: AsPrivilege;

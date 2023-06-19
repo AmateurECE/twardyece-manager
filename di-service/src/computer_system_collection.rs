@@ -32,10 +32,10 @@ use redfish_core::{
     privilege::{ConfigureComponents, Login},
 };
 
-use crate::PrivilegeTemplate;
+use crate::OperationPrivilegeMapping;
 
 pub struct DefaultPrivileges;
-impl PrivilegeTemplate for DefaultPrivileges {
+impl OperationPrivilegeMapping for DefaultPrivileges {
     type Get = Login;
     type Post = ConfigureComponents;
     type Put = ConfigureComponents;
@@ -69,9 +69,9 @@ where
 impl<S, P> ComputerSystemCollection<S, P>
 where
     S: AsRef<dyn AuthenticateRequest> + Clone + Send + Sync + 'static,
-    P: PrivilegeTemplate + 'static,
-    <P as PrivilegeTemplate>::Get: Send,
-    <P as PrivilegeTemplate>::Post: Send,
+    P: OperationPrivilegeMapping + 'static,
+    <P as OperationPrivilegeMapping>::Get: Send,
+    <P as OperationPrivilegeMapping>::Post: Send,
 {
     pub fn get<H, T>(mut self, handler: H) -> Self
     where
