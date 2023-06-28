@@ -18,4 +18,4 @@ tower = "0.4.13"
 
 redfish-codegen = { version = "0.2.0", path = "../../redfish-codegen/redfish-codegen" }
 redfish-core = { version = "0.1.0", path = "../../redfish-codegen/redfish-core" }
-seuss = { version = "0.1.0", path = "../../redfish-codegen/seuss", features = ["serde", "auth-pam", "service"] }
+seuss = { version = "0.1.0", path = "../../redfish-codegen/seuss", features = ["serde", "auth-pam", "router"] }

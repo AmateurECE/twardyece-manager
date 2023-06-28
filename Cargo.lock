@@ -935,10 +935,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "redfish-codegen"
+name = "redfish-axum"
 version = "0.2.0"
 dependencies = [
  "axum",
+ "redfish-codegen",
+ "redfish-core",
+]
+
+[[package]]
+name = "redfish-codegen"
+version = "0.2.0"
+dependencies = [
  "derivative",
  "redfish-macros",
  "serde",
@@ -952,6 +960,7 @@ dependencies = [
  "axum",
  "redfish-codegen",
  "serde",
+ "strum",
 ]
 
 [[package]]
@@ -1162,6 +1171,7 @@ dependencies = [
  "futures",
  "pam",
  "rand",
+ "redfish-axum",
  "redfish-codegen",
  "redfish-core",
  "serde",
@@ -1250,6 +1260,28 @@ name = "strsim"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
+
+[[package]]
+name = "strum"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "290d54ea6f91c969195bdbcd7442c8c2a2ba87da8bf60a7ee86a235d4bc1e125"
+dependencies = [
+ "strum_macros",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe9f3bd7d2e45dcc5e265fbb88d6513e4747d8ef9444cf01a533119bce28a157"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "rustversion",
+ "syn 2.0.10",
+]
 
 [[package]]
 name = "syn"
@@ -1463,23 +1495,6 @@ name = "try-lock"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
-
-[[package]]
-name = "twardyece-manager"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "clap",
- "redfish-codegen",
- "serde",
- "serde_json",
- "serde_yaml",
- "seuss",
- "tokio",
- "tower-http",
- "tracing-subscriber",
-]
 
 [[package]]
 name = "unicode-ident"
